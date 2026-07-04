@@ -76,6 +76,7 @@ const config = {
 
   dashboard: {
     filename: process.env.DASHBOARD_PATH || path.join(__dirname, 'dashboard.html'),
+    indexFilename: process.env.INDEX_PATH || path.join(__dirname, 'index.html'),
     publicUrl: process.env.DASHBOARD_URL || 'https://YOUR_GITHUB_USERNAME.github.io/YOUR_REPOSITORY/dashboard.html'
   },
 

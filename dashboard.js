@@ -375,14 +375,25 @@ async function generateDashboard() {
   const previousRecord = records.length > 1 ? records[1] : null;
 
   await fs.mkdir(path.dirname(config.dashboard.filename), { recursive: true });
+  const html = buildHtml({ latestRecord, previousRecord, stats, records });
+
   await fs.writeFile(
     config.dashboard.filename,
-    buildHtml({ latestRecord, previousRecord, stats, records }),
+    html,
+    'utf8'
+  );
+  await fs.writeFile(
+    config.dashboard.indexFilename,
+    html,
     'utf8'
   );
 
   consoleInfo(`看板已生成：${config.dashboard.filename}`);
-  return config.dashboard.filename;
+  consoleInfo(`GitHub Pages 首页已生成：${config.dashboard.indexFilename}`);
+  return {
+    dashboardPath: config.dashboard.filename,
+    indexPath: config.dashboard.indexFilename
+  };
 }
 
 module.exports = {

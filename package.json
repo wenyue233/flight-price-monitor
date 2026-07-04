@@ -9,9 +9,11 @@
     "watch": "node --disable-warning=ExperimentalWarning index.js",
     "once": "node --disable-warning=ExperimentalWarning index.js --once",
     "run-once": "pnpm run once",
-    "publish": "node --disable-warning=ExperimentalWarning publisher.js"
+    "publish": "node --disable-warning=ExperimentalWarning publisher.js",
+    "serve": "node server.js"
   },
   "dependencies": {
+    "express": "^4.19.2",
     "node-cron": "^3.0.3",
     "playwright": "^1.45.0"
   },

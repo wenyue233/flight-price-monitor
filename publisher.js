@@ -1,7 +1,7 @@
 /**
  * GitHub Pages 发布脚本。
  *
- * 只提交 dashboard.html 和 flight-prices.sqlite。
+ * 只提交 GitHub Pages 展示所需文件。
  * git push 失败时由调用方记录错误，不影响本地保存。
  */
 
@@ -45,17 +45,18 @@ async function publishDashboard() {
     return { skipped: true, reason: 'not-connected-to-github' };
   }
 
-  await runGit(['add', 'dashboard.html', 'flight-prices.sqlite']);
+  const publishFiles = ['dashboard.html', 'index.html', 'README.md'];
+  await runGit(['add', ...publishFiles]);
 
-  const status = await runGit(['status', '--porcelain', 'dashboard.html', 'flight-prices.sqlite']);
+  const status = await runGit(['status', '--porcelain', ...publishFiles]);
   if (!status) {
-    consoleInfo('publish: dashboard.html 和 flight-prices.sqlite 没有变化，跳过提交。');
+    consoleInfo('publish: dashboard.html / index.html / README.md 没有变化，跳过提交。');
     return { skipped: true };
   }
 
   await runGit(['commit', '-m', 'update flight price dashboard']);
   await runGit(['push']);
-  consoleInfo('publish: 已提交并推送 dashboard.html 和 flight-prices.sqlite。');
+  consoleInfo('GitHub Pages 已更新。');
 
   return { skipped: false };
 }

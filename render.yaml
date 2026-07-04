@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: flight-price-monitor
+    env: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+  # Render cron schedules use UTC. These map to 09:00 / 13:00 / 17:00 / 21:00 Asia/Tokyo.
+  - type: cron
+    name: flight-price-monitor-0900-jst
+    env: docker
+    schedule: "0 0 * * *"
+    dockerCommand: pnpm run once
+  - type: cron
+    name: flight-price-monitor-1300-jst
+    env: docker
+    schedule: "0 4 * * *"
+    dockerCommand: pnpm run once
+  - type: cron
+    name: flight-price-monitor-1700-jst
+    env: docker
+    schedule: "0 8 * * *"
+    dockerCommand: pnpm run once
+  - type: cron
+    name: flight-price-monitor-2100-jst
+    env: docker
+    schedule: "0 12 * * *"
+    dockerCommand: pnpm run once

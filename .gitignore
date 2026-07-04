@@ -1,4 +1,3 @@
 node_modules/
-work/logs/
-work/screenshots/
-work/debug-html/
+flight-prices.sqlite
+work/
