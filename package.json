@@ -1,0 +1,21 @@
+{
+  "name": "flight-price-monitor",
+  "version": "1.0.0",
+  "description": "Personal flight price monitor using Node.js, Playwright, SQLite, and node-cron.",
+  "main": "index.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning index.js",
+    "watch": "node --disable-warning=ExperimentalWarning index.js",
+    "once": "node --disable-warning=ExperimentalWarning index.js --once",
+    "run-once": "pnpm run once",
+    "publish": "node --disable-warning=ExperimentalWarning publisher.js"
+  },
+  "dependencies": {
+    "node-cron": "^3.0.3",
+    "playwright": "^1.45.0"
+  },
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

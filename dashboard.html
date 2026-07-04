@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>个人机票价格看板</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      margin: 24px;
+      color: #222;
+      background: #f7f7f7;
+    }
+
+    h1 {
+      margin-bottom: 8px;
+      font-size: 28px;
+    }
+
+    .meta {
+      margin-bottom: 20px;
+      color: #555;
+      line-height: 1.6;
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 14px;
+    }
+
+    .card h2 {
+      margin: 0 0 8px;
+      font-size: 14px;
+      color: #666;
+      font-weight: 600;
+    }
+
+    .value {
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .details,
+    .chartBox,
+    .tableBox {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+
+    .detailsGrid {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 8px 12px;
+      font-size: 15px;
+    }
+
+    .detailsGrid dt {
+      color: #666;
+      font-weight: 600;
+    }
+
+    .detailsGrid dd {
+      margin: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      background: #fff;
+    }
+
+    th,
+    td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #efefef;
+    }
+
+    .note {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>个人机票价格看板</h1>
+  <div class="meta">
+    航线：FUK → PVG<br>
+    出发：2026-08-08，返回：2026-08-15<br>
+    网站：Trip.com，目标货币：JPY<br>
+    页面生成时间：2026/7/4 17:22:00
+  </div>
+
+  <section class="details">
+    <h2>最新查询详情</h2>
+    <dl class="detailsGrid">
+      <dt>查询时间</dt>
+      <dd>2026-07-04T08:20:37.980Z</dd>
+      <dt>抓取网站</dt>
+      <dd>Trip.com</dd>
+      <dt>当前价格</dt>
+      <dd>109,290 JPY</dd>
+      <dt>航线</dt>
+      <dd>FUK → PVG</dd>
+      <dt>出发日期</dt>
+      <dd>2026-08-08</dd>
+      <dt>返回日期</dt>
+      <dd>2026-08-15</dd>
+      <dt>是否匹配目标航班</dt>
+      <dd>已匹配目标航班</dd>
+      <dt>航班号</dt>
+      <dd>去程：未读取到，但已按航司+时间+直飞匹配；返程：未读取到，但已按航司+时间+直飞匹配</dd>
+      <dt>航司</dt>
+      <dd>去程：Spring Airlines；返程：Spring Airlines</dd>
+      <dt>去程时间</dt>
+      <dd>18:00 → 19:00</dd>
+      <dt>返程时间</dt>
+      <dd>13:50 → 17:00</dd>
+      <dt>是否直飞</dt>
+      <dd>是</dd>
+      <dt>原始价格文本</dt>
+      <dd>JPY 109,290</dd>
+    </dl>
+  </section>
+
+  <section class="cards">
+    <div class="card">
+      <h2>当前最新价格</h2>
+      <div class="value">109,290 JPY</div>
+    </div>
+    <div class="card">
+      <h2>上次价格</h2>
+      <div class="value">109,290 JPY</div>
+    </div>
+    <div class="card">
+      <h2>和上次相比</h2>
+      <div class="value">持平：0 JPY</div>
+    </div>
+    <div class="card">
+      <h2>历史最低价格</h2>
+      <div class="value">109,290 JPY</div>
+    </div>
+    <div class="card">
+      <h2>历史最高价格</h2>
+      <div class="value">109,290 JPY</div>
+    </div>
+  </section>
+
+  <section class="chartBox">
+    <h2>最近价格变化折线图</h2>
+    <canvas id="priceChart" height="100"></canvas>
+    <p class="note">折线图只展示 SQLite 中真实保存的记录。</p>
+  </section>
+
+  <section class="tableBox">
+    <h2>最近 10 次记录</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>日期</th>
+          <th>时间</th>
+          <th>价格</th>
+          <th>货币</th>
+          <th>网站</th>
+          <th>匹配状态</th>
+          <th>去程航班号</th>
+          <th>返程航班号</th>
+          <th>去程航司</th>
+          <th>返程航司</th>
+          <th>去程时间</th>
+          <th>返程时间</th>
+          <th>是否直飞</th>
+          <th>原始价格文本</th>
+          <th>入库时间</th>
+        </tr>
+      </thead>
+      <tbody>
+        
+      <tr>
+        <td>2026-07-04</td>
+        <td>17:20:37</td>
+        <td>109,290 JPY</td>
+        <td>JPY</td>
+        <td>Trip.com</td>
+        <td>已匹配目标航班</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>Spring Airlines</td>
+        <td>Spring Airlines</td>
+        <td>18:00 → 19:00</td>
+        <td>13:50 → 17:00</td>
+        <td>是</td>
+        <td>JPY 109,290</td>
+        <td>2026-07-04 08:22:00</td>
+      </tr>
+    
+      <tr>
+        <td>2026-07-04</td>
+        <td>16:44:08</td>
+        <td>109,290 JPY</td>
+        <td>JPY</td>
+        <td>Trip.com</td>
+        <td>已匹配目标航班</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>Spring Airlines</td>
+        <td>Spring Airlines</td>
+        <td>18:00 → 19:00</td>
+        <td>13:50 → 17:00</td>
+        <td>是</td>
+        <td>JPY 109,290</td>
+        <td>2026-07-04 07:45:31</td>
+      </tr>
+    
+      <tr>
+        <td>2026-07-04</td>
+        <td>16:38:47</td>
+        <td>109,290 JPY</td>
+        <td>JPY</td>
+        <td>Trip.com</td>
+        <td>已匹配目标航班</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>未读取到，但已按航司+时间+直飞匹配</td>
+        <td>Spring Airlines</td>
+        <td>Spring Airlines</td>
+        <td>18:00 → 19:00</td>
+        <td>13:50 → 17:00</td>
+        <td>是</td>
+        <td>JPY 109,290</td>
+        <td>2026-07-04 07:40:09</td>
+      </tr>
+    
+      </tbody>
+    </table>
+  </section>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script>
+    const chartLabels = ["2026-07-04 16:38:47","2026-07-04 16:44:08","2026-07-04 17:20:37"];
+    const chartPrices = [109290,109290,109290];
+    const chartCurrency = "JPY";
+
+    new Chart(document.getElementById('priceChart'), {
+      type: 'line',
+      data: {
+        labels: chartLabels,
+        datasets: [{
+          label: '最低价格 (' + chartCurrency + ')',
+          data: chartPrices,
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.12)',
+          tension: 0.2,
+          fill: true
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          y: {
+            beginAtZero: false
+          }
+        }
+      }
+    });
+  </script>
+</body>
+</html>
