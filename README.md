@@ -1,6 +1,6 @@
 # Flight Price Monitor
 
-个人机票价格看板工具。程序会每天 09:00、13:00、17:00、21:00 打开 Trip.com，查找指定往返航班组合，匹配成功后保存价格到 SQLite，并生成可直接打开的 `dashboard.html`。
+个人机票价格看板工具。程序会每天 09:00、13:00、17:00、21:00 打开 Trip.com，查找指定往返航班组合，匹配成功后保存价格到 SQLite，并生成可直接打开的 `dashboard.html` 和 GitHub Pages 首页 `index.html`。
 
 ## 安装
 
@@ -65,18 +65,24 @@ pnpm run publish
 这个命令会执行：
 
 ```bash
-git add dashboard.html flight-prices.sqlite
+git add dashboard.html index.html README.md
 git commit -m "update flight price dashboard"
 git push
 ```
 
-开启 GitHub Pages 后，可以用 GitHub Pages 链接在公司电脑或手机查看 `dashboard.html`。把链接写到环境变量 `DASHBOARD_URL`，邮件里会使用这个地址：
+GitHub Pages 只用于展示看板，不保存 SQLite、日志、截图或 debug HTML。开启 GitHub Pages 后，可以用仓库 Pages 首页在公司电脑或手机查看看板：
 
 ```bash
-DASHBOARD_URL=https://你的用户名.github.io/你的仓库/dashboard.html
+https://wenyue233.github.io/flight-price-monitor/
 ```
 
-每次 `pnpm run once` 或 `pnpm run watch` 自动查询成功后，程序会先保存 SQLite、重新生成 `dashboard.html`，然后尝试自动执行 publish。如果 `git push` 失败，本地保存不受影响，只会输出错误日志。
+程序会同时生成 `dashboard.html` 和内容相同的 `index.html`，所以打开 Pages 首页会直接显示机票看板。邮件里的 dashboard 链接可用环境变量配置：
+
+```bash
+DASHBOARD_URL=https://wenyue233.github.io/flight-price-monitor/
+```
+
+每次 `pnpm run once` 或 `pnpm run watch` 自动查询成功后，程序会先保存 SQLite、重新生成 `dashboard.html` 和 `index.html`，然后尝试自动执行 publish。如果 `git push` 失败，本地保存不受影响，只会输出错误日志。
 
 如果当前目录还没有执行 `git init`，或还没有配置 `remote origin`，publish 不会报错，也不会执行 git add/commit/push，只会提示：
 
