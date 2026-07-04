@@ -10,7 +10,8 @@
     "once": "node --disable-warning=ExperimentalWarning index.js --once",
     "run-once": "pnpm run once",
     "publish": "node --disable-warning=ExperimentalWarning publisher.js",
-    "serve": "node server.js"
+    "serve": "node server.js",
+    "update": "node --disable-warning=ExperimentalWarning update.js"
   },
   "dependencies": {
     "express": "^4.19.2",

@@ -19,7 +19,7 @@ const config = {
     departureDate: process.env.FLIGHT_DEPARTURE_DATE || '2026-08-08',
 
     // 返回日期，格式必须是 YYYY-MM-DD。如果只查单程，可设为空字符串。
-    returnDate: process.env.FLIGHT_RETURN_DATE || '2026-08-15',
+    returnDate: process.env.FLIGHT_RETURN_DATE || '2026-08-16',
 
     // 期望读取的货币。Trip.com 页面可能会根据地区展示不同货币。
     currency: process.env.FLIGHT_CURRENCY || 'JPY'
@@ -33,7 +33,7 @@ const config = {
       arrivalTime: '19:00'
     },
     return: {
-      departureTime: '13:50',
+      departureTime: '14:00',
       arrivalTime: '17:00'
     },
     directOnly: true,
