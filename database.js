@@ -109,6 +109,7 @@ async function initializeDatabase() {
       return_arrival_time TEXT,
       is_direct INTEGER,
       match_status TEXT,
+      status TEXT NOT NULL DEFAULT 'normal',
       original_price INTEGER,
       original_price_text TEXT,
       raw_price_text TEXT,
@@ -141,12 +142,45 @@ async function initializeDatabase() {
   addColumnIfMissing(db, 'price_history', 'return_arrival_time', 'TEXT');
   addColumnIfMissing(db, 'price_history', 'is_direct', 'INTEGER');
   addColumnIfMissing(db, 'price_history', 'match_status', 'TEXT');
+  addColumnIfMissing(db, 'price_history', 'status', "TEXT NOT NULL DEFAULT 'normal'");
   addColumnIfMissing(db, 'price_history', 'original_price', 'INTEGER');
   addColumnIfMissing(db, 'price_history', 'original_price_text', 'TEXT');
   addColumnIfMissing(db, 'price_history', 'raw_price_text', 'TEXT');
   migrateOldPriceRecords(db);
+  backfillMissingStatuses(db);
 
   return db;
+}
+
+function backfillMissingStatuses(database) {
+  const records = database
+    .prepare(`
+      SELECT id, price, status
+      FROM price_history
+      WHERE match_status = 'matched'
+      ORDER BY observed_at ASC, id ASC
+    `)
+    .all();
+
+  let previousNormal = null;
+  let previousRecord = null;
+  const updateStatus = database.prepare('UPDATE price_history SET status = ? WHERE id = ?');
+
+  for (const record of records) {
+    let status = 'normal';
+    if (previousRecord && previousRecord.status === 'suspicious' && previousRecord.price === record.price) {
+      status = 'normal';
+    } else if (previousNormal && record.price < previousNormal.price * 0.92) {
+      status = 'suspicious';
+    }
+
+    updateStatus.run(status, record.id);
+    const current = { ...record, status };
+    if (status === 'normal') {
+      previousNormal = current;
+    }
+    previousRecord = current;
+  }
 }
 
 async function insertPriceRecord(record) {
@@ -179,11 +213,12 @@ async function insertPriceRecord(record) {
         return_arrival_time,
         is_direct,
         match_status,
+        status,
         original_price,
         original_price_text,
         raw_price_text
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
   const result = statement.run(
@@ -212,6 +247,7 @@ async function insertPriceRecord(record) {
     record.returnArrivalTime || null,
     record.isDirect ? 1 : 0,
     record.matchStatus || null,
+    record.status || 'normal',
     record.originalPrice || null,
     record.originalPriceText || null,
     record.rawPriceText || null
@@ -233,6 +269,7 @@ async function getLatestRecordForDate({ site, route, observedDate }) {
         AND COALESCE(return_date, '') = COALESCE(?, '')
         AND observed_date = ?
         AND match_status = 'matched'
+        AND COALESCE(status, 'normal') = 'normal'
       ORDER BY observed_at DESC, id DESC
       LIMIT 1
     `);
@@ -259,6 +296,7 @@ async function getLatestRecord({ site, route }) {
         AND departure_date = ?
         AND COALESCE(return_date, '') = COALESCE(?, '')
         AND match_status = 'matched'
+        AND COALESCE(status, 'normal') = 'normal'
       ORDER BY observed_at DESC, id DESC
       LIMIT 1
     `);
@@ -284,6 +322,7 @@ async function getPreviousRecord({ site, route, beforeObservedAt }) {
         AND departure_date = ?
         AND COALESCE(return_date, '') = COALESCE(?, '')
         AND match_status = 'matched'
+        AND COALESCE(status, 'normal') = 'normal'
         AND observed_at < ?
       ORDER BY observed_at DESC, id DESC
       LIMIT 1
@@ -314,6 +353,7 @@ async function getPriceStats({ site, route }) {
         AND departure_date = ?
         AND COALESCE(return_date, '') = COALESCE(?, '')
         AND match_status = 'matched'
+        AND COALESCE(status, 'normal') = 'normal'
     `);
 
   return statement.get(
@@ -337,6 +377,59 @@ async function getRecentRecords({ site, route, limit = 200 }) {
         AND departure_date = ?
         AND COALESCE(return_date, '') = COALESCE(?, '')
         AND match_status = 'matched'
+        AND COALESCE(status, 'normal') = 'normal'
+      ORDER BY observed_at DESC, id DESC
+      LIMIT ?
+    `);
+
+  return statement.all(
+    site,
+    route.departureAirport,
+    route.arrivalAirport,
+    route.departureDate,
+    route.returnDate || '',
+    limit
+  );
+}
+
+async function getLatestAnyRecord({ site, route }) {
+  const database = await initializeDatabase();
+
+  const statement = database.prepare(`
+      SELECT *
+      FROM price_history
+      WHERE site = ?
+        AND departure_airport = ?
+        AND arrival_airport = ?
+        AND departure_date = ?
+        AND COALESCE(return_date, '') = COALESCE(?, '')
+        AND match_status = 'matched'
+      ORDER BY observed_at DESC, id DESC
+      LIMIT 1
+    `);
+
+  return statement.get(
+    site,
+    route.departureAirport,
+    route.arrivalAirport,
+    route.departureDate,
+    route.returnDate || ''
+  );
+}
+
+async function getSuspiciousRecords({ site, route, limit = 50 }) {
+  const database = await initializeDatabase();
+
+  const statement = database.prepare(`
+      SELECT *
+      FROM price_history
+      WHERE site = ?
+        AND departure_airport = ?
+        AND arrival_airport = ?
+        AND departure_date = ?
+        AND COALESCE(return_date, '') = COALESCE(?, '')
+        AND match_status = 'matched'
+        AND status = 'suspicious'
       ORDER BY observed_at DESC, id DESC
       LIMIT ?
     `);
@@ -365,8 +458,10 @@ module.exports = {
   insertPriceRecord,
   getLatestRecordForDate,
   getLatestRecord,
+  getLatestAnyRecord,
   getPreviousRecord,
   getPriceStats,
   getRecentRecords,
+  getSuspiciousRecords,
   closeDatabase
 };

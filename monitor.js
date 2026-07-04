@@ -8,6 +8,8 @@ const config = require('./config');
 const {
   initializeDatabase,
   insertPriceRecord,
+  getLatestRecord,
+  getLatestAnyRecord,
   getPreviousRecord,
   getPriceStats
 } = require('./database');
@@ -37,6 +39,32 @@ function formatChange(currentRecord, previousRecord) {
   }
 
   return `${diff > 0 ? '上涨' : '下降'} ${Math.abs(diff).toLocaleString('ja-JP')} ${currentRecord.currency}`;
+}
+
+async function determineRecordStatus({ site, route, price }) {
+  const [previousNormal, previousAny] = await Promise.all([
+    getLatestRecord({ site, route }),
+    getLatestAnyRecord({ site, route })
+  ]);
+
+  if (previousAny && previousAny.status === 'suspicious' && previousAny.price === price) {
+    return {
+      status: 'normal',
+      reason: '同一价格连续出现两次，恢复为 normal'
+    };
+  }
+
+  if (previousNormal && price < previousNormal.price * 0.92) {
+    return {
+      status: 'suspicious',
+      reason: `Price jump: 当前价格比上一条有效价格低超过 8%（上一条有效价格 ${formatPrice(previousNormal.price, previousNormal.currency)}）`
+    };
+  }
+
+  return {
+    status: 'normal',
+    reason: ''
+  };
 }
 
 async function printRunSummary({ site, route, record }) {
@@ -71,6 +99,11 @@ async function runMonitorOnce() {
       consoleInfo(`正在打开 ${scraper.siteName} 并匹配目标往返航班组合...`);
 
       const result = await scraper.searchLowestPrice(config.route);
+      const statusDecision = await determineRecordStatus({
+        site: result.site,
+        route: config.route,
+        price: result.price
+      });
       const record = {
         observedDate,
         observedTime,
@@ -97,6 +130,7 @@ async function runMonitorOnce() {
         returnArrivalTime: result.returnArrivalTime,
         isDirect: result.isDirect,
         matchStatus: result.matchStatus,
+        status: statusDecision.status,
         originalPrice: result.originalPrice,
         originalPriceText: result.originalPriceText,
         rawPriceText: result.rawPriceText
@@ -104,7 +138,10 @@ async function runMonitorOnce() {
 
       const id = await insertPriceRecord(record);
       hasSuccessfulQuery = true;
-      consoleInfo(`${scraper.siteName}: 已保存记录 #${id}，最低价 ${formatPrice(record.price, record.currency)}。`);
+      consoleInfo(`${scraper.siteName}: 已保存记录 #${id}，价格 ${formatPrice(record.price, record.currency)}，status=${record.status}。`);
+      if (record.status === 'suspicious') {
+        consoleInfo(`异常价格已保留但不计入正式统计：${statusDecision.reason}`);
+      }
 
       const summaryContext = await printRunSummary({
         site: scraper.siteName,

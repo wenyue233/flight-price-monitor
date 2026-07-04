@@ -14,9 +14,21 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const config = require('./config');
 const { hasGitRepository, hasRemoteOrigin } = require('./publisher');
+const { initializeDatabase, getLatestRecord, closeDatabase } = require('./database');
 
 const execFileAsync = promisify(execFile);
-const publishFiles = ['dashboard.html', 'index.html', 'README.md', 'dashboard.js', 'config.js'];
+const publishFiles = [
+  'dashboard.html',
+  'index.html',
+  'README.md',
+  'dashboard.js',
+  'config.js',
+  'database.js',
+  'monitor.js',
+  'update.js',
+  'package.json',
+  '.gitignore'
+];
 
 async function runCommand(command, args, options = {}) {
   const result = await execFileAsync(command, args, {
@@ -68,6 +80,32 @@ async function runOnce() {
   });
 }
 
+function formatPrice(price, currency) {
+  if (price === null || price === undefined) {
+    return '暂无数据';
+  }
+
+  return `${Number(price).toLocaleString('ja-JP')} ${currency || config.route.currency}`;
+}
+
+async function getCurrentNormalPrice() {
+  await initializeDatabase();
+  const record = await getLatestRecord({
+    site: config.trip.siteName,
+    route: config.route
+  });
+
+  return record
+    ? {
+        priceText: formatPrice(record.price, record.currency),
+        record
+      }
+    : {
+        priceText: '暂无 normal 记录',
+        record: null
+      };
+}
+
 async function stagePublishFiles() {
   printCommand('git', ['add', ...publishFiles]);
   await runCommand('git', ['add', ...publishFiles]);
@@ -80,7 +118,7 @@ async function getPublishStatus() {
 async function commitIfNeeded() {
   const status = await getPublishStatus();
   if (!status) {
-    console.log('没有需要发布的变化');
+    console.log('没有需要提交的代码。');
     return false;
   }
 
@@ -99,7 +137,7 @@ async function pushChanges() {
   }
 
   console.log('GitHub Pages 已更新。');
-  console.log(`GitHub Pages 链接：${config.dashboard.publicUrl}`);
+  console.log(`GitHub Pages：\n${config.dashboard.publicUrl}`);
   return true;
 }
 
@@ -109,6 +147,9 @@ async function update() {
   }
 
   try {
+    console.log('[1/5] 打开 Trip...');
+    console.log('[2/5] 匹配目标航班...');
+    console.log('[3/5] 读取最终价格...');
     await runOnce();
   } catch (error) {
     const output = `${error.stdout || ''}\n${error.stderr || ''}\n${error.message || ''}`.trim();
@@ -116,13 +157,19 @@ async function update() {
     return;
   }
 
+  console.log('[4/5] 更新 dashboard...');
   await stagePublishFiles();
   const committed = await commitIfNeeded();
+  const current = await getCurrentNormalPrice();
   if (!committed) {
-    console.log(`GitHub Pages 链接：${config.dashboard.publicUrl}`);
+    console.log('查询完成');
+    console.log(`当前价格：${current.priceText}`);
+    console.log(`GitHub Pages：\n${config.dashboard.publicUrl}`);
+    await closeDatabase();
     return;
   }
 
+  console.log('[5/5] GitHub Pages...');
   try {
     await pullLatest();
   } catch (error) {
@@ -132,7 +179,14 @@ async function update() {
     return;
   }
 
-  await pushChanges();
+  const pushed = await pushChanges();
+  console.log('查询完成');
+  console.log(`当前价格：${current.priceText}`);
+  console.log(`GitHub Pages：\n${config.dashboard.publicUrl}`);
+  await closeDatabase();
+  if (!pushed) {
+    process.exitCode = 1;
+  }
 }
 
 if (require.main === module) {

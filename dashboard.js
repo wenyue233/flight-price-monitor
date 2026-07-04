@@ -12,7 +12,8 @@ const {
   initializeDatabase,
   getLatestRecord,
   getPriceStats,
-  getRecentRecords
+  getRecentRecords,
+  getSuspiciousRecords
 } = require('./database');
 const { consoleInfo } = require('./utils/logger');
 
@@ -144,7 +145,24 @@ function createTableRows(records) {
     .join('');
 }
 
-function buildHtml({ latestRecord, previousRecord, stats, records }) {
+function createSuspiciousRows(records) {
+  if (records.length === 0) {
+    return '<tr><td colspan="4">暂无异常记录</td></tr>';
+  }
+
+  return records
+    .map((record) => `
+      <tr>
+        <td>${escapeHtml(record.query_time || record.observed_at || `${record.observed_date} ${record.observed_time}`)}</td>
+        <td>${escapeHtml(formatPrice(record.price, record.currency))}</td>
+        <td>${escapeHtml(record.raw_price_text || '')}</td>
+        <td>Price jump</td>
+      </tr>
+    `)
+    .join('');
+}
+
+function buildHtml({ latestRecord, previousRecord, stats, records, suspiciousRecords }) {
   const chartRecords = records.slice().reverse();
   const chartLabels = chartRecords.map((record) => `${record.observed_date} ${record.observed_time}`);
   const chartPrices = chartRecords.map((record) => record.price);
@@ -205,6 +223,7 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
 
     .details,
     .chartBox,
+    .suspiciousBox,
     .tableBox {
       background: #fff;
       border: 1px solid #ddd;
@@ -341,7 +360,7 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
   <section class="chartBox">
     <h2>最近价格变化折线图</h2>
     <canvas id="priceChart" height="100"></canvas>
-    <p class="note">折线图只展示 SQLite 中真实保存的记录。</p>
+    <p class="note">折线图只展示 status=normal 的真实保存记录。</p>
   </section>
 
   <section class="tableBox">
@@ -369,6 +388,23 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
       </thead>
       <tbody>
         ${createTableRows(records)}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="suspiciousBox">
+    <h2>异常记录</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>查询时间</th>
+          <th>价格</th>
+          <th>原始价格文本</th>
+          <th>原因</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${createSuspiciousRows(suspiciousRecords)}
       </tbody>
     </table>
   </section>
@@ -414,15 +450,16 @@ async function generateDashboard() {
     route: config.route
   };
 
-  const [latestRecord, stats, records] = await Promise.all([
+  const [latestRecord, stats, records, suspiciousRecords] = await Promise.all([
     getLatestRecord(query),
     getPriceStats(query),
-    getRecentRecords({ ...query, limit: 10 })
+    getRecentRecords({ ...query, limit: 10 }),
+    getSuspiciousRecords({ ...query, limit: 50 })
   ]);
   const previousRecord = records.length > 1 ? records[1] : null;
 
   await fs.mkdir(path.dirname(config.dashboard.filename), { recursive: true });
-  const html = buildHtml({ latestRecord, previousRecord, stats, records });
+  const html = buildHtml({ latestRecord, previousRecord, stats, records, suspiciousRecords });
 
   await fs.writeFile(
     config.dashboard.filename,
