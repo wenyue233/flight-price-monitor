@@ -106,7 +106,7 @@ class TripScraper extends BaseScraper {
         }
       }
       const pageArtifacts = await this.capturePageArtifacts(page, 'trip-page');
-      const matchLogPath = await writeJsonLog('trip-match', {
+      let matchLogPath = await writeJsonLog('trip-match', {
         searchUrl,
         route,
         targetFlight: config.targetFlight,
@@ -137,11 +137,53 @@ class TripScraper extends BaseScraper {
         throw error;
       }
 
+      const fareSelectionSteps = [];
+      let finalPricePage = page;
+      for (let step = 0; step < 2; step += 1) {
+        const fareSelectionResult = await this.tryEnterFareSelectionPage(finalPricePage);
+        finalPricePage = fareSelectionResult.page;
+        fareSelectionSteps.push(fareSelectionResult.log);
+        if (!fareSelectionResult.log.clicked) {
+          break;
+        }
+
+        await this.waitForLikelyResults(finalPricePage);
+        if (!/View Details|Details/i.test(fareSelectionResult.log.clickableText || '')) {
+          break;
+        }
+      }
+      matchResult.diagnostics.fareSelection = fareSelectionSteps;
+      await this.closeCookieOrPopupIfPresent(finalPricePage);
+      const finalPriceResult = await this.extractFinalPaymentPriceFromPage(finalPricePage, route.currency);
+      matchResult.diagnostics.finalPriceSelection = finalPriceResult;
+      if (finalPriceResult && finalPriceResult.selected) {
+        matchResult.match.originalPrice = finalPriceResult.originalPrice || null;
+        matchResult.match.originalPriceText = finalPriceResult.originalPriceText || '';
+        matchResult.match.price = finalPriceResult.selected.price;
+        matchResult.match.currency = finalPriceResult.selected.currency;
+        matchResult.match.rawPriceText = finalPriceResult.selected.rawPriceText;
+      }
+      const finalPageArtifacts = finalPricePage === page
+        ? pageArtifacts
+        : await this.capturePageArtifacts(finalPricePage, 'trip-final-page');
+      matchLogPath = await writeJsonLog('trip-final-price', {
+        searchUrl,
+        route,
+        targetFlight: config.targetFlight,
+        matched: true,
+        match: matchResult.match,
+        fareSelection: fareSelectionSteps,
+        finalPriceSelection: finalPriceResult,
+        artifacts: finalPageArtifacts
+      });
+
       return {
         site: this.siteName,
         price: matchResult.match.price,
         currency: matchResult.match.currency,
         rawPriceText: matchResult.match.rawPriceText,
+        originalPrice: matchResult.match.originalPrice,
+        originalPriceText: matchResult.match.originalPriceText,
         url: searchUrl,
         outboundFlightNo: matchResult.match.outboundFlightNo,
         returnFlightNo: matchResult.match.returnFlightNo,
@@ -379,6 +421,422 @@ class TripScraper extends BaseScraper {
 
     usable.sort((a, b) => a.price - b.price);
     return usable[0];
+  }
+
+  async extractFinalPaymentPriceFromPage(page, preferredCurrency) {
+    return page.evaluate((currency) => {
+      function clean(value) {
+        return value ? value.replace(/\s+/g, ' ').trim() : '';
+      }
+
+      function normalizeAmount(value) {
+        const normalized = value.replace(/,/g, '');
+        const number = Number.parseFloat(normalized);
+        return Number.isFinite(number) ? Math.round(number) : null;
+      }
+
+      function detectCurrency(rawText) {
+        if (/JPY|円|¥/i.test(rawText)) {
+          return 'JPY';
+        }
+        if (/EUR|€/i.test(rawText)) {
+          return 'EUR';
+        }
+        if (/GBP|£/i.test(rawText)) {
+          return 'GBP';
+        }
+        if (/USD|US\$|\$/i.test(rawText)) {
+          return 'USD';
+        }
+        return currency;
+      }
+
+      function isVisible(element) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' &&
+          style.display !== 'none' &&
+          rect.width > 0 &&
+          rect.height > 0;
+      }
+
+      function hasLineThrough(element) {
+        let current = element;
+        for (let depth = 0; current && depth < 4; depth += 1) {
+          const style = window.getComputedStyle(current);
+          if (/line-through/i.test(style.textDecorationLine || style.textDecoration || '')) {
+            return true;
+          }
+          current = current.parentElement;
+        }
+        return false;
+      }
+
+      function extractPrices(text) {
+        const escapedCurrency = currency.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const patterns = [
+          new RegExp(`(?:${escapedCurrency}|JPY|¥)\\s*([0-9][0-9,.]*)`, 'gi'),
+          new RegExp(`([0-9][0-9,.]*)\\s*(?:${escapedCurrency}|JPY|円)`, 'gi'),
+          /(?:USD|US\$|\$)\s*([0-9][0-9,.]*)/gi,
+          /(?:EUR|€)\s*([0-9][0-9,.]*)/gi,
+          /(?:GBP|£)\s*([0-9][0-9,.]*)/gi
+        ];
+
+        const prices = [];
+        for (const pattern of patterns) {
+          let match;
+          while ((match = pattern.exec(text))) {
+            const price = normalizeAmount(match[1]);
+            if (!price || price < 1000) {
+              continue;
+            }
+
+            prices.push({
+              price,
+              currency: detectCurrency(match[0]),
+              rawPriceText: clean(match[0]),
+              index: match.index
+            });
+          }
+        }
+
+        return prices;
+      }
+
+      function keywordScore(text) {
+        let score = 0;
+        if (/total|payment|pay now|pay|amount|current|final|price|subtotal|合計|总计|總計|支付|付款|价格|價格|当前|目前|最终|最終|料金|支払|お支払い/i.test(text)) {
+          score += 4;
+        }
+        if (/coupon|discount|off|优惠|割引|値引|クーポン/i.test(text)) {
+          score += 1;
+        }
+        if (/tax|fee|fare|taxes|手数料|税/i.test(text)) {
+          score += 1;
+        }
+        if (/original|was|list price|参考|原价|原價|通常|割引前/i.test(text)) {
+          score -= 2;
+        }
+        return score;
+      }
+
+      function hasPaymentKeyword(text) {
+        return /total|payment|pay now|pay|amount due|current|final|subtotal|book|continue|next|合計|总计|總計|支付|付款|当前|目前|最终|最終|支払|お支払い|予約|次へ|続行/i.test(text);
+      }
+
+      function isPriceAlertText(text) {
+        return /price alerts?|want a better deal|notify you when the price drops|recommended:|high chances of success|低价提醒|降价提醒|价格提醒|価格アラート/i.test(text);
+      }
+
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+      const elements = Array.from(document.querySelectorAll('body *'));
+      const candidates = [];
+
+      for (const element of elements) {
+        if (!isVisible(element)) {
+          continue;
+        }
+
+        const text = clean(element.innerText || element.textContent || '');
+        if (!text || text.length > 1200 || !/(JPY|¥|円|USD|US\$|\$|EUR|€|GBP|£)/i.test(text)) {
+          continue;
+        }
+
+        if (isPriceAlertText(text)) {
+          continue;
+        }
+
+        const prices = extractPrices(text);
+        if (prices.length === 0) {
+          continue;
+        }
+
+        const rect = element.getBoundingClientRect();
+        const style = window.getComputedStyle(element);
+        const fixedOrSticky = style.position === 'fixed' || style.position === 'sticky';
+        const bottomZone = rect.top >= viewportHeight * 0.55 || rect.bottom >= viewportHeight * 0.78;
+        const rightZone = rect.left >= viewportWidth * 0.45 || rect.right >= viewportWidth * 0.78;
+        const lineThrough = hasLineThrough(element);
+        const semanticScore = keywordScore(text);
+        const paymentKeyword = hasPaymentKeyword(text);
+
+        prices.forEach((priceItem, priceIndex) => {
+          const score =
+            (fixedOrSticky ? 100 : 0) +
+            (bottomZone ? 45 : 0) +
+            (rightZone ? 25 : 0) +
+            semanticScore +
+            (lineThrough ? -80 : 0) +
+            (priceIndex === prices.length - 1 ? 8 : 0);
+
+          candidates.push({
+            ...priceItem,
+            elementText: text.slice(0, 500),
+            fixedOrSticky,
+            bottomZone,
+            rightZone,
+            lineThrough,
+            paymentKeyword,
+            score,
+            rect: {
+              top: Math.round(rect.top),
+              left: Math.round(rect.left),
+              bottom: Math.round(rect.bottom),
+              right: Math.round(rect.right),
+              width: Math.round(rect.width),
+              height: Math.round(rect.height)
+            }
+          });
+        });
+      }
+
+      const preferredCurrencyCandidates = candidates.filter((candidate) => candidate.currency === currency);
+      const usable = preferredCurrencyCandidates.length > 0 ? preferredCurrencyCandidates : candidates;
+      const finalAreaCandidates = usable.filter((candidate) =>
+        (candidate.fixedOrSticky && (candidate.bottomZone || candidate.rightZone)) ||
+        (candidate.bottomZone && candidate.rightZone && candidate.paymentKeyword)
+      );
+      const finalPool = finalAreaCandidates;
+
+      const selected = finalPool
+        .slice()
+        .sort((a, b) =>
+          b.score - a.score ||
+          Number(a.lineThrough) - Number(b.lineThrough) ||
+          a.price - b.price ||
+          b.index - a.index
+        )[0] || null;
+
+      const possibleOriginal = usable
+        .filter((candidate) =>
+          selected &&
+          candidate.currency === selected.currency &&
+          candidate.price > selected.price &&
+          (candidate.lineThrough || /original|was|参考|原价|原價|通常|割引前/i.test(candidate.elementText))
+        )
+        .sort((a, b) => a.price - b.price)[0] || null;
+
+      return {
+        selected,
+        originalPrice: possibleOriginal ? possibleOriginal.price : null,
+        originalPriceText: possibleOriginal ? possibleOriginal.rawPriceText : '',
+        candidates: usable
+          .slice()
+          .sort((a, b) => b.score - a.score || a.price - b.price)
+          .slice(0, 80),
+        selectionReason: selected
+          ? [
+              selected.fixedOrSticky ? '优先选择 fixed/sticky 底部固定栏候选' : '未识别到固定栏，使用页面可见候选',
+              selected.bottomZone ? '候选位于页面下方区域' : '候选不在下方区域',
+              selected.rightZone ? '候选位于右侧区域' : '候选不在右侧区域',
+              selected.lineThrough ? '候选疑似划线价，因缺少更好候选才选择' : '候选不是划线价',
+              '如同一区域出现多个价格，优先当前支付/最终价语义并避开原价；分数相近时选择较低的优惠后价格'
+            ].join('；')
+          : '未读取到可用价格候选'
+      };
+    }, preferredCurrency);
+  }
+
+  async tryEnterFareSelectionPage(page) {
+    const selection = await page.evaluate((target) => {
+      function clean(value) {
+        return value ? value.replace(/\s+/g, ' ').trim() : '';
+      }
+
+      function uniqueElements(values) {
+        return Array.from(new Set(values.filter(Boolean)));
+      }
+
+      function isVisible(element) {
+        const style = window.getComputedStyle(element);
+        const rect = element.getBoundingClientRect();
+        return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+      }
+
+      function parseMinutes(value) {
+        const match = String(value || '').match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
+        return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+      }
+
+      function withinTolerance(actual, expected) {
+        const actualMinutes = parseMinutes(actual);
+        const expectedMinutes = parseMinutes(expected);
+        return actualMinutes !== null &&
+          expectedMinutes !== null &&
+          Math.abs(actualMinutes - expectedMinutes) <= target.timeToleranceMinutes;
+      }
+
+      function hasAny(text, keywords) {
+        const lower = text.toLowerCase();
+        return keywords.some((keyword) => lower.includes(String(keyword).toLowerCase()));
+      }
+
+      function hasDirect(text) {
+        return !target.directOnly || (/(?:^|\b)(Nonstop|Direct)(?:\b|$)|直飞/i.test(text) && !hasAny(text, target.forbiddenStopKeywords));
+      }
+
+      function hasTargetTime(text, expected) {
+        const times = Array.from(new Set(text.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/g) || []));
+        return times.some((time) => withinTolerance(time, expected));
+      }
+
+      function clickableText(node) {
+        return clean(node.innerText || node.textContent || '');
+      }
+
+      function findClickable(container) {
+        const clickables = Array.from(container.querySelectorAll('button, a, [role="button"]'))
+          .filter((node) => /View Details|Details|Select|Book|Continue|Next|选择|選択|预订|預訂|予約|继续|下一步|次へ/i.test(clickableText(node)));
+
+        return clickables
+          .sort((a, b) => {
+            function priority(node) {
+              const text = clickableText(node);
+              if (/Select|Book|Continue|Next|选择|選択|预订|預訂|予約|继续|下一步|次へ/i.test(text)) {
+                return 0;
+              }
+              return 1;
+            }
+
+            return priority(a) - priority(b);
+          })[0];
+      }
+
+      function findSelectableContainer(element) {
+        let current = element;
+        for (let depth = 0; current && depth < 8; depth += 1) {
+          const text = clean(current.innerText || current.textContent || '');
+          if (text.length > 0 && text.length < 2200 && findClickable(current)) {
+            return current;
+          }
+          current = current.parentElement;
+        }
+        return element;
+      }
+
+      const selectors = ['[class*="flight" i]', '[class*="card" i]', '[class*="result" i]', 'li', 'section', 'article', 'div'];
+      const elements = uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+      const candidates = elements
+        .filter(isVisible)
+        .map((element) => {
+          const text = clean(element.innerText || element.textContent || '');
+          const container = findSelectableContainer(element);
+          const containerText = clean(container.innerText || container.textContent || '');
+          const clickable = findClickable(container);
+          const returnDeparture = hasTargetTime(text, target.return.departureTime);
+          const returnArrival = hasTargetTime(text, target.return.arrivalTime);
+          const outboundDeparture = hasTargetTime(text, target.outbound.departureTime);
+          const outboundArrival = hasTargetTime(text, target.outbound.arrivalTime);
+
+          return {
+            element: container,
+            text,
+            containerText,
+            hasAirline: hasAny(text, target.airlineKeywords),
+            hasDirect: hasDirect(text),
+            returnDeparture,
+            returnArrival,
+            outboundDeparture,
+            outboundArrival,
+            hasClickable: Boolean(clickable),
+            clickableText: clickable ? clickableText(clickable) : '',
+            score: [
+              hasAny(text, target.airlineKeywords),
+              hasDirect(text),
+              returnDeparture,
+              returnArrival,
+              Boolean(clickable)
+            ].filter(Boolean).length
+          };
+        })
+        .filter((candidate) =>
+          candidate.text.length >= 20 &&
+          candidate.text.length <= 4000 &&
+          candidate.containerText.length <= 2200 &&
+          candidate.hasAirline &&
+          candidate.hasDirect &&
+          candidate.returnDeparture &&
+          candidate.returnArrival &&
+          candidate.hasClickable
+        )
+        .sort((a, b) =>
+          a.containerText.length - b.containerText.length ||
+          b.score - a.score
+        );
+
+      const best = candidates[0];
+      document.querySelectorAll('[data-codex-target-fare]').forEach((element) => {
+        element.removeAttribute('data-codex-target-fare');
+      });
+      document.querySelectorAll('[data-codex-target-fare-button]').forEach((element) => {
+        element.removeAttribute('data-codex-target-fare-button');
+      });
+
+      if (!best) {
+        return {
+          found: false,
+          clicked: false,
+          reason: 'No target return/combination card with a fare-selection button was found.'
+        };
+      }
+
+      best.element.setAttribute('data-codex-target-fare', 'true');
+      const button = findClickable(best.element);
+      if (button) {
+        button.setAttribute('data-codex-target-fare-button', 'true');
+      }
+      return {
+        found: true,
+        clicked: false,
+        clickableText: best.clickableText,
+        textPreview: best.containerText.slice(0, 700)
+      };
+    }, config.targetFlight);
+
+    if (!selection.found) {
+      return { log: selection, page };
+    }
+
+    const targetCard = page.locator('[data-codex-target-fare="true"]').first();
+    const button = page.locator('[data-codex-target-fare-button="true"]').first();
+
+    if (await button.isVisible({ timeout: 3000 }).catch(() => false)) {
+      const popupPromise = page.context().waitForEvent('page', { timeout: 10000 }).catch(() => null);
+      await button.click({ timeout: 5000 }).catch(() => {});
+      const popup = await popupPromise;
+      const activePage = popup || page;
+      await activePage.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+      await activePage.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+      await activePage.waitForTimeout(5000);
+      return {
+        log: {
+          ...selection,
+          clicked: true,
+          openedNewPage: Boolean(popup),
+          urlAfterClick: activePage.url()
+        },
+        page: activePage
+      };
+    }
+
+    const popupPromise = page.context().waitForEvent('page', { timeout: 10000 }).catch(() => null);
+    await targetCard.click({ timeout: 5000 }).catch(() => {});
+    const popup = await popupPromise;
+    const activePage = popup || page;
+    await activePage.waitForLoadState('domcontentloaded', { timeout: 15000 }).catch(() => {});
+    await activePage.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
+    await activePage.waitForTimeout(5000);
+    return {
+      log: {
+        ...selection,
+        clicked: true,
+        clickedCard: true,
+        openedNewPage: Boolean(popup),
+        urlAfterClick: activePage.url()
+      },
+      page: activePage
+    };
   }
 
   async extractTargetFlightCombination(page, preferredCurrency) {

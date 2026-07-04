@@ -47,6 +47,30 @@ function formatDifference(latestRecord, previousRecord) {
   return `${label}：${Math.abs(diff).toLocaleString('ja-JP')} ${latestRecord.currency}`;
 }
 
+function getManualPrice() {
+  return Number.isFinite(config.manualPrice) && config.manualPrice > 0
+    ? config.manualPrice
+    : null;
+}
+
+function formatManualDifference(latestRecord, manualPrice, currency) {
+  if (!latestRecord) {
+    return '暂无自动抓取价';
+  }
+
+  if (!manualPrice) {
+    return '暂无手动确认价';
+  }
+
+  const diff = latestRecord.price - manualPrice;
+  if (diff === 0) {
+    return `一致：0 ${currency}`;
+  }
+
+  const label = diff > 0 ? '自动价高于手动价' : '自动价低于手动价';
+  return `${label}：${Math.abs(diff).toLocaleString('ja-JP')} ${currency}`;
+}
+
 function displayValue(value) {
   return value ? value : '未读取到';
 }
@@ -93,7 +117,7 @@ function displayTimeRange(record, prefix) {
 
 function createTableRows(records) {
   if (records.length === 0) {
-    return '<tr><td colspan="15">暂无目标航班匹配记录</td></tr>';
+    return '<tr><td colspan="16">暂无目标航班匹配记录</td></tr>';
   }
 
   return records
@@ -102,6 +126,7 @@ function createTableRows(records) {
         <td>${escapeHtml(record.observed_date)}</td>
         <td>${escapeHtml(record.observed_time)}</td>
         <td>${escapeHtml(formatPrice(record.price, record.currency))}</td>
+        <td>${escapeHtml(record.original_price ? formatPrice(record.original_price, record.currency) : '未读取到')}</td>
         <td>${escapeHtml(record.currency)}</td>
         <td>${escapeHtml(record.site)}</td>
         <td>${escapeHtml(displayMatchStatus(record))}</td>
@@ -125,6 +150,7 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
   const chartPrices = chartRecords.map((record) => record.price);
   const generatedAt = new Date().toLocaleString('ja-JP');
   const latestCurrency = latestRecord ? latestRecord.currency : config.route.currency;
+  const manualPrice = getManualPrice();
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -246,6 +272,16 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
       <dd>${escapeHtml(latestRecord ? latestRecord.site : config.trip.siteName)}</dd>
       <dt>当前价格</dt>
       <dd>${escapeHtml(formatPrice(latestRecord && latestRecord.price, latestCurrency))}</dd>
+      <dt>自动抓取价</dt>
+      <dd>${escapeHtml(formatPrice(latestRecord && latestRecord.price, latestCurrency))}</dd>
+      <dt>手动确认价</dt>
+      <dd>${escapeHtml(manualPrice ? formatPrice(manualPrice, latestCurrency) : '暂无手动确认价')}</dd>
+      <dt>自动/手动差额</dt>
+      <dd>${escapeHtml(formatManualDifference(latestRecord, manualPrice, latestCurrency))}</dd>
+      <dt>最终价格</dt>
+      <dd>${escapeHtml(formatPrice(latestRecord && latestRecord.price, latestCurrency))}</dd>
+      <dt>原价</dt>
+      <dd>${escapeHtml(latestRecord && latestRecord.original_price ? formatPrice(latestRecord.original_price, latestCurrency) : '未读取到')}</dd>
       <dt>航线</dt>
       <dd>${escapeHtml(config.route.departureAirport)} → ${escapeHtml(config.route.arrivalAirport)}</dd>
       <dt>出发日期</dt>
@@ -264,15 +300,25 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
       <dd>${escapeHtml(displayTimeRange(latestRecord, 'return'))}</dd>
       <dt>是否直飞</dt>
       <dd>${escapeHtml(displayDirect(latestRecord && latestRecord.is_direct))}</dd>
-      <dt>原始价格文本</dt>
+      <dt>最终价文本</dt>
       <dd>${escapeHtml(displayValue(latestRecord && latestRecord.raw_price_text))}</dd>
+      <dt>原价文本</dt>
+      <dd>${escapeHtml(displayValue(latestRecord && latestRecord.original_price_text))}</dd>
     </dl>
   </section>
 
   <section class="cards">
     <div class="card">
-      <h2>当前最新价格</h2>
+      <h2>自动抓取价</h2>
       <div class="value">${escapeHtml(formatPrice(latestRecord && latestRecord.price, latestCurrency))}</div>
+    </div>
+    <div class="card">
+      <h2>手动确认价</h2>
+      <div class="value">${escapeHtml(manualPrice ? formatPrice(manualPrice, latestCurrency) : '暂无手动确认价')}</div>
+    </div>
+    <div class="card">
+      <h2>自动/手动差额</h2>
+      <div class="value">${escapeHtml(formatManualDifference(latestRecord, manualPrice, latestCurrency))}</div>
     </div>
     <div class="card">
       <h2>上次价格</h2>
@@ -305,7 +351,8 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
         <tr>
           <th>日期</th>
           <th>时间</th>
-          <th>价格</th>
+          <th>最终价格</th>
+          <th>原价</th>
           <th>货币</th>
           <th>网站</th>
           <th>匹配状态</th>
@@ -316,7 +363,7 @@ function buildHtml({ latestRecord, previousRecord, stats, records }) {
           <th>去程时间</th>
           <th>返程时间</th>
           <th>是否直飞</th>
-          <th>原始价格文本</th>
+          <th>最终价文本</th>
           <th>入库时间</th>
         </tr>
       </thead>

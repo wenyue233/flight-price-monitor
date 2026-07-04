@@ -109,6 +109,8 @@ async function initializeDatabase() {
       return_arrival_time TEXT,
       is_direct INTEGER,
       match_status TEXT,
+      original_price INTEGER,
+      original_price_text TEXT,
       raw_price_text TEXT,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -139,6 +141,8 @@ async function initializeDatabase() {
   addColumnIfMissing(db, 'price_history', 'return_arrival_time', 'TEXT');
   addColumnIfMissing(db, 'price_history', 'is_direct', 'INTEGER');
   addColumnIfMissing(db, 'price_history', 'match_status', 'TEXT');
+  addColumnIfMissing(db, 'price_history', 'original_price', 'INTEGER');
+  addColumnIfMissing(db, 'price_history', 'original_price_text', 'TEXT');
   addColumnIfMissing(db, 'price_history', 'raw_price_text', 'TEXT');
   migrateOldPriceRecords(db);
 
@@ -175,9 +179,11 @@ async function insertPriceRecord(record) {
         return_arrival_time,
         is_direct,
         match_status,
+        original_price,
+        original_price_text,
         raw_price_text
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
   const result = statement.run(
@@ -206,6 +212,8 @@ async function insertPriceRecord(record) {
     record.returnArrivalTime || null,
     record.isDirect ? 1 : 0,
     record.matchStatus || null,
+    record.originalPrice || null,
+    record.originalPriceText || null,
     record.rawPriceText || null
   );
 

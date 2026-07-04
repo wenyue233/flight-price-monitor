@@ -25,6 +25,10 @@ const config = {
     currency: process.env.FLIGHT_CURRENCY || 'JPY'
   },
 
+  // 手动打开 Trip.com 后确认到的价格，只用于 dashboard 对比展示。
+  // 留空或设置为 0 时，页面会显示“暂无手动确认价”。
+  manualPrice: Number(process.env.MANUAL_PRICE || 106490),
+
   targetFlight: {
     airline: 'Spring Airlines',
     airlineKeywords: ['Spring Airlines', '春秋航空'],

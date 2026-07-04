@@ -97,6 +97,8 @@ async function runMonitorOnce() {
         returnArrivalTime: result.returnArrivalTime,
         isDirect: result.isDirect,
         matchStatus: result.matchStatus,
+        originalPrice: result.originalPrice,
+        originalPriceText: result.originalPriceText,
         rawPriceText: result.rawPriceText
       };
 
