@@ -48,11 +48,10 @@ function getRunOnceCommands() {
   if (process.platform === 'win32') {
     return [
       {
-        command: 'corepack.cmd',
-        args: ['pnpm', 'run', 'once'],
-        options: {
-          shell: true
-        }
+        command: process.env.ComSpec || 'cmd.exe',
+        args: ['/d', '/s', '/c', 'corepack.cmd pnpm run once'],
+        displayCommand: 'corepack.cmd',
+        displayArgs: ['pnpm', 'run', 'once']
       }
     ];
   }
@@ -99,8 +98,8 @@ async function runOnce() {
   const commands = getRunOnceCommands();
   let lastError;
 
-  for (const { command, args, options } of commands) {
-    printCommand(command, args);
+  for (const { command, args, options, displayCommand, displayArgs } of commands) {
+    printCommand(displayCommand || command, displayArgs || args);
     try {
       await runCommand(command, args, {
         env: {
