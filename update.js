@@ -2,7 +2,7 @@
  * One-command updater for short-term ticket monitoring.
  *
  * Flow:
- * 1. pnpm run once
+ * 1. corepack/corepack.cmd pnpm run once
  * 2. stage only publishable source/dashboard files
  * 3. stop if there are no publishable changes
  * 4. commit
@@ -44,6 +44,31 @@ function printCommand(command, args) {
   console.log(`$ ${[command, ...args].join(' ')}`);
 }
 
+function getRunOnceCommands() {
+  if (process.platform === 'win32') {
+    return [
+      {
+        command: 'corepack.cmd',
+        args: ['pnpm', 'run', 'once'],
+        options: {
+          shell: true
+        }
+      }
+    ];
+  }
+
+  return [
+    {
+      command: 'corepack',
+      args: ['pnpm', 'run', 'once']
+    },
+    {
+      command: 'pnpm',
+      args: ['run', 'once']
+    }
+  ];
+}
+
 function explainGitPushError(error) {
   const output = `${error.stdout || ''}\n${error.stderr || ''}\n${error.message || ''}`;
   if (/could not read Username|Authentication failed|Permission denied|repository not found|403|401/i.test(output)) {
@@ -71,13 +96,29 @@ async function pullLatest() {
 }
 
 async function runOnce() {
-  printCommand('pnpm', ['run', 'once']);
-  await runCommand('pnpm', ['run', 'once'], {
-    env: {
-      ...process.env,
-      PATH: process.env.PATH
+  const commands = getRunOnceCommands();
+  let lastError;
+
+  for (const { command, args, options } of commands) {
+    printCommand(command, args);
+    try {
+      await runCommand(command, args, {
+        env: {
+          ...process.env,
+          PATH: process.env.PATH
+        },
+        ...options
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (process.platform === 'win32' || error.code !== 'ENOENT') {
+        throw error;
+      }
     }
-  });
+  }
+
+  throw lastError;
 }
 
 function formatPrice(price, currency) {
@@ -197,5 +238,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  update
+  update,
+  getRunOnceCommands
 };
