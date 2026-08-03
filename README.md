@@ -1,114 +1,262 @@
 # Flight Price Monitor
 
-个人机票价格看板工具。程序会每天 09:00、13:00、17:00、21:00 打开 Trip.com，查找指定往返航班组合，匹配成功后保存价格到 SQLite，并生成可直接打开的 `dashboard.html` 和 GitHub Pages 首页 `index.html`。
+Trip.com で指定した往復航空券を定期的に確認し、価格履歴を SQLite に保存して、静的な dashboard を生成する個人用の航空券価格監視ツールです。
 
-## 安装
+現在は福岡 `FUK` から上海浦東 `PVG` への Spring Airlines 往復便を対象にしています。検索は手動実行、常駐監視、GitHub Pages 公開のいずれにも対応しています。
 
-需要 Node.js `>=22.5.0`，因为数据库层使用 Node 内置 SQLite。
+## プロジェクト概要
+            Trip.com
+               ↓
+        Playwright Scraper
+               ↓
+          SQLite Database
+               ↓
+      Dashboard Generator
+               ↓
+            GitHub Pages
+このプロジェクトは、航空券価格を毎日決まった時刻に確認し、価格の変化を見やすく残すことを目的にしています。
 
-```bash
-npm install
-npx playwright install chromium
+主な機能は次のとおりです。
+
+- Trip.com を Playwright で開き、実際に表示された検索結果から価格を取得する
+- 指定した航空会社、往路・復路時刻、直行便条件に合う往復便だけを保存する
+- SQLite に価格履歴を蓄積する
+- `dashboard.html` と `index.html` を生成する
+- GitHub Pages に dashboard を公開する
+- 価格変化があった場合にメール通知内容を作成する
+- dashboard の表示言語を日本語 / 簡体字中国語で切り替えられる
+
+## 技術スタック
+
+- Node.js `>=22.5.0`
+- CommonJS
+- Playwright
+- node:sqlite
+- node-cron
+- Express
+- Chart.js
+- pnpm / Corepack
+- GitHub Pages
+
+## ファイル構成
+
+```text
+config/
+  index.js                  アプリ全体の設定と環境変数の既定値
+
+src/
+  app/
+    index.js                実行入口。once / watch モードを切り替える
+    monitor.js              1 回分の検索、保存、dashboard 生成、通知、publish をまとめる
+    nextQueryTime.js         watch 起動後に表示する次回検索時刻を計算する
+    scheduler.js            node-cron による定期実行を管理する
+    update.js               検索、dashboard 更新、Git commit / push をまとめて実行する
+
+  scraper/
+    BaseScraper.js          scraper の共通インターフェース
+    TripScraper.js          Trip.com を Playwright で操作する scraper
+    index.js                有効な scraper を登録する
+
+  database/
+    index.js                SQLite の初期化、マイグレーション、CRUD
+
+  dashboard/
+    generator.js            SQLite の履歴から dashboard HTML を生成する
+    locales.js              dashboard の日本語 / 中国語 UI 文言
+
+  notifier/
+    email.js                価格変化メールの作成と送信
+
+  git/
+    publisher.js            GitHub Pages 用ファイルの commit / push
+
+  server/
+    index.js                Render などで dashboard を配信する Express サーバー
+
+  utils/
+    logger.js               ログ、スクリーンショット、debug HTML の保存
+    time.js                 日付と時刻の整形
+
+dashboard.html              生成済み dashboard
+index.html                  GitHub Pages のトップページ用 dashboard
+flight-prices.sqlite        価格履歴データベース
+package.json                npm scripts と依存関係
+render.yaml                 Render cron 用設定
 ```
 
-## 配置
+## システム流程
 
-直接修改 `config.js`：
+1. `pnpm run once` または scheduler から `runMonitorOnce()` が呼ばれる。
+2. `TripScraper` が Trip.com を開き、指定ルートの検索結果を読み込む。
+3. 対象航空会社、時刻、直行便条件に合う往復便を探す。
+4. 条件に合う便が見つかった場合、最終支払い価格を取得する。
+5. 価格を SQLite の `price_history` に保存する。
+6. 前回価格や過去統計をもとに summary と通知内容を作る。
+7. `dashboard.html` と `index.html` を再生成する。
+8. GitHub remote が設定されている場合、Pages 用ファイルを commit / push する。
 
-- `departureAirport`：出发机场，默认 `FUK`
-- `arrivalAirport`：到达机场，默认 `PVG`
-- `departureDate`：出发日期，格式 `YYYY-MM-DD`
-- `returnDate`：返回日期，格式 `YYYY-MM-DD`
-- `currency`：目标货币，例如 `JPY`
-- `targetFlight`：目标航班匹配条件，包括 Spring Airlines / 春秋航空、去返程时间、直飞要求和时间容差
+## セットアップ
 
-也可以用环境变量覆盖：
+Node.js `>=22.5.0` が必要です。SQLite は Node.js 組み込みの `node:sqlite` を使っています。
 
 ```bash
-FLIGHT_FROM=FUK FLIGHT_TO=PVG FLIGHT_DEPARTURE_DATE=2026-08-08 FLIGHT_RETURN_DATE=2026-08-15 pnpm run once
+corepack enable
+corepack pnpm install
+corepack pnpm exec playwright install chromium
 ```
 
-## 运行
+Windows では次のように `corepack.cmd` を使えます。
 
-手动查一次：
+```powershell
+corepack.cmd pnpm install
+corepack.cmd pnpm exec playwright install chromium
+```
+
+## 設定方法
+
+基本設定は [config/index.js](config/index.js) にあります。
+
+主な設定項目は次のとおりです。
+
+- `route.departureAirport`: 出発空港。既定値は `FUK`
+- `route.arrivalAirport`: 到着空港。既定値は `PVG`
+- `route.departureDate`: 出発日。形式は `YYYY-MM-DD`
+- `route.returnDate`: 復路日。形式は `YYYY-MM-DD`
+- `route.currency`: 取得したい通貨。例: `JPY`
+- `targetFlight`: 航空会社、往路・復路時刻、直行便条件、時刻許容幅
+- `manualPrice`: 手動確認価格。dashboard 上で自動取得価格と比較する
+- `scheduler.cronExpressions`: 自動検索の実行時刻
+
+環境変数でも上書きできます。
+
+```bash
+FLIGHT_FROM=FUK FLIGHT_TO=PVG FLIGHT_DEPARTURE_DATE=2026-08-08 FLIGHT_RETURN_DATE=2026-08-16 pnpm run once
+```
+
+## 実行方法
+
+1 回だけ検索します。
 
 ```bash
 pnpm run once
 ```
 
-长期自动运行：
+Windows では次のように実行できます。
+
+```powershell
+corepack.cmd pnpm run once
+```
+
+watch モードでは、起動直後に 1 回検索したあと、毎日 `09:00`、`13:00`、`17:00`、`21:00` JST に自動検索します。
 
 ```bash
 pnpm run watch
 ```
 
-`pnpm run watch` 会保持进程常驻，并按 Asia/Tokyo 时区每天 `09:00`、`13:00`、`17:00`、`21:00` 自动查询。`pnpm start` 等同于 `pnpm run watch`。
+Windows:
 
-查看结果的页面：
-
-```text
-/Users/tukimac/Documents/Codex/2026-07-04/node-js-javascript-typescript-playwright-sqlite/dashboard.html
+```powershell
+corepack.cmd pnpm run watch
 ```
 
-这个文件不需要启动服务器，可以直接用浏览器打开。页面内容全部来自 SQLite 中的真实抓取记录，不会生成模拟数据。
+dashboard をローカルサーバーで配信します。
 
-注意：电脑睡眠、关机、网络断开，或终端进程退出时，不会自动查询。长期监控需要保持电脑唤醒并让 `pnpm run watch` 进程持续运行。
+```bash
+pnpm run serve
+```
 
-## GitHub Pages 发布
+一括更新、commit、push を行います。
 
-手动发布当前看板和数据库：
+```bash
+pnpm run update
+```
+
+Windows:
+
+```powershell
+corepack.cmd pnpm run update
+```
+
+## Dashboard
+
+検索後に次の 2 つの HTML が生成されます。
+
+- `dashboard.html`
+- `index.html`
+
+`index.html` は GitHub Pages のトップページとして使います。どちらも同じ内容で、サーバーなしでもブラウザで直接開けます。
+
+dashboard には次の情報を表示します。
+
+- 最新価格
+- 手動確認価格との差分
+- 前回価格との差分
+- 過去最低価格と過去最高価格
+- 直近の価格推移グラフ
+- 直近 10 件の履歴
+- 異常価格として扱った記録
+- 日本語 / 簡体字中国語の切り替え
+
+## データ
+
+SQLite データベースは既定でプロジェクト直下に保存されます。
+
+```text
+flight-prices.sqlite
+```
+
+主なテーブルは `price_history` です。
+
+保存される主な項目は次のとおりです。
+
+- 検索日時
+- 価格
+- 通貨
+- サイト名
+- 出発空港 / 到着空港
+- 出発日 / 復路日
+- 往路・復路の便名
+- 航空会社
+- 往路・復路の出発 / 到着時刻
+- 直行便かどうか
+- マッチ状態
+- 元価格テキスト
+
+旧バージョンの `price_records` が存在する場合は、初回起動時に `price_history` へコピーします。既存データは削除しません。
+
+## GitHub Pages 公開
+
+手動で publish する場合は次を実行します。
 
 ```bash
 pnpm run publish
 ```
 
-这个命令会执行：
+publish は GitHub Pages 表示に必要なファイルだけを対象にします。
+
+- `dashboard.html`
+- `index.html`
+- `README.md`
+
+GitHub remote が設定されていない場合は、commit / push を行わずにスキップします。
+
+公開 URL は環境変数で変更できます。
 
 ```bash
-git add dashboard.html index.html README.md
-git commit -m "update flight price dashboard"
-git push
+DASHBOARD_URL=https://example.github.io/flight-price-monitor/
 ```
 
-GitHub Pages 只用于展示看板，不保存 SQLite、日志、截图或 debug HTML。开启 GitHub Pages 后，可以用仓库 Pages 首页在公司电脑或手机查看看板：
+## メール通知
 
-```bash
-https://wenyue233.github.io/flight-price-monitor/
-```
+既定では dry-run です。実際には送信せず、通知対象になった場合に件名と本文をコンソールへ出力します。
 
-程序会同时生成 `dashboard.html` 和内容相同的 `index.html`，所以打开 Pages 首页会直接显示机票看板。邮件里的 dashboard 链接可用环境变量配置：
+通知条件は次のとおりです。
 
-```bash
-DASHBOARD_URL=https://wenyue233.github.io/flight-price-monitor/
-```
+- 前回価格より下がった
+- 前回価格より上がった
+- 目標価格を下回った
 
-每次 `pnpm run once` 或 `pnpm run watch` 自动查询成功后，程序会先保存 SQLite、重新生成 `dashboard.html` 和 `index.html`，然后尝试自动执行 publish。如果 `git push` 失败，本地保存不受影响，只会输出错误日志。
-
-如果当前目录还没有执行 `git init`，或还没有配置 `remote origin`，publish 不会报错，也不会执行 git add/commit/push，只会提示：
-
-```text
-当前项目尚未连接 GitHub，请先初始化 Git 仓库。
-```
-
-## 邮件通知
-
-默认是 dry-run，不会真的发送邮件。dry-run 会在触发通知时输出邮件标题和正文。
-
-通知规则：
-
-- 当前价格低于上次价格：发送降价提醒
-- 当前价格高于上次价格：发送涨价提醒
-- 当前价格持平：不发送
-- 当前价格低于 `targetPrice`：发送目标价提醒
-- 同时满足价格变化和低于目标价时，只发送一封邮件
-
-当前目标价默认：
-
-```text
-105000 JPY
-```
-
-邮件环境变量：
+実際にメール送信するには、SMTP 設定と `MAIL_DRY_RUN=false` が必要です。
 
 ```bash
 SMTP_HOST=
@@ -116,69 +264,34 @@ SMTP_PORT=
 SMTP_USER=
 SMTP_PASS=
 MAIL_TO=
+MAIL_DRY_RUN=false
 ```
 
-如果没有配置邮件环境变量，真实发送模式下会输出“邮件未配置，跳过发送”。如需未来真实发送邮件，请安装 `nodemailer` 并关闭 dry-run：
+必要に応じて `nodemailer` を追加します。
 
 ```bash
 pnpm add nodemailer
-MAIL_DRY_RUN=false pnpm run once
 ```
 
-## 数据
+## エラー調査
 
-SQLite 数据库默认保存在：
+Trip.com のページ構造変更、読み込み失敗、価格抽出失敗が起きた場合、ログと調査用ファイルを保存します。
 
 ```text
-flight-prices.sqlite
+work/logs/
+work/screenshots/
+work/debug-html/
 ```
 
-表名：
+これにより、失敗時点の画面や HTML をあとから確認できます。
 
-```text
-price_history
-```
+## 改善計画
 
-字段包括查询时间、日期、时间、价格、货币、网站、航线、出发日期、返回日期、航班号、航司、出发/到达时间、是否直飞、匹配状态和原始价格文本。旧版本的 `price_records` 会在启动时自动复制到 `price_history`，不会删除旧数据。
-
-只有匹配到目标航班组合时才会写入 `price_history`，避免把页面最低价误保存为目标航班价格。找不到目标组合时，会在 `work/logs/` 中记录页面上读取到的航班号、航司、时间和截图路径。
-
-## 错误日志
-
-如果 Trip.com 页面变化、加载失败或找不到价格，程序不会静默失败，会输出错误并保存调试文件：
-
-- `work/logs/`
-- `work/screenshots/`
-- `work/debug-html/`
-
-## 扩展新网站
-
-新增网站时：
-
-1. 在 `scrapers/` 下新增类，例如 `GoogleFlightsScraper.js`
-2. 继承 `BaseScraper`
-3. 实现 `searchLowestPrice(route)`
-4. 在 `scrapers/index.js` 注册
-
-每个 scraper 返回统一结构：
-
-```js
-{
-  site: 'Trip.com',
-  price: 92350,
-  currency: 'JPY',
-  rawPriceText: 'JPY 92,350',
-  outboundFlightNo: '',
-  returnFlightNo: '',
-  airline: 'Spring Airlines',
-  outboundAirline: 'Spring Airlines',
-  returnAirline: 'Spring Airlines',
-  outboundDepartureTime: '18:00',
-  outboundArrivalTime: '19:00',
-  returnDepartureTime: '13:50',
-  returnArrivalTime: '17:00',
-  isDirect: true,
-  matchStatus: 'matched',
-  url: 'https://...'
-}
-```
+- dashboard の表をフィルターやソートに対応させる
+- 価格推移グラフに期間切り替えを追加する
+- 複数ルートの監視に対応する
+- 複数サイトの scraper を追加する
+- メール以外の通知方法を追加する
+- 設定を JSON や UI から編集できるようにする
+- 監視結果の自動テストを増やす
+- Docker / Render 運用手順をさらに整理する
