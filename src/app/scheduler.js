@@ -1,14 +1,13 @@
 /**
- * 每日调度器。
+ * 定期実行スケジューラー。
  *
- * node-cron 会在进程存活时按计划执行。
- * 如果放在 NAS/服务器上，建议配合 pm2、systemd 或 launchd 保持 index.js 常驻。
+ * node-cron で実行時刻を登録し、前回処理が続いている場合は重複実行を避ける。
  */
 
 const cron = require('node-cron');
-const config = require('./config');
+const config = require('../../config');
 const { runMonitorOnce } = require('./monitor');
-const { consoleInfo, consoleError } = require('./utils/logger');
+const { consoleInfo, consoleError } = require('../utils/logger');
 
 let isRunning = false;
 

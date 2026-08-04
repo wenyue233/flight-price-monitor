@@ -1,38 +1,44 @@
 /**
- * One-command updater for short-term ticket monitoring.
- *
- * Flow:
- * 1. corepack/corepack.cmd pnpm run once
- * 2. stage only publishable source/dashboard files
- * 3. stop if there are no publishable changes
- * 4. commit
- * 5. git pull --rebase
- * 6. push
+ * 検索、dashboard 更新、commit、rebase、push をまとめて実行する更新スクリプト。
  */
 
 const { execFile } = require('child_process');
+const path = require('path');
 const { promisify } = require('util');
-const config = require('./config');
-const { hasGitRepository, hasRemoteOrigin } = require('./publisher');
-const { initializeDatabase, getLatestRecord, closeDatabase } = require('./database');
+const config = require('../../config');
+const { hasGitRepository, hasRemoteOrigin } = require('../git/publisher');
+const { initializeDatabase, getLatestRecord, closeDatabase } = require('../database');
 
 const execFileAsync = promisify(execFile);
+const projectRoot = path.resolve(__dirname, '..', '..');
 const publishFiles = [
   'dashboard.html',
   'index.html',
   'README.md',
-  'dashboard.js',
-  'config.js',
-  'database.js',
-  'monitor.js',
-  'update.js',
+  'config/index.js',
+  'src/app/index.js',
+  'src/app/monitor.js',
+  'src/app/nextQueryTime.js',
+  'src/app/scheduler.js',
+  'src/app/update.js',
+  'src/dashboard/generator.js',
+  'src/dashboard/locales.js',
+  'src/database/index.js',
+  'src/git/publisher.js',
+  'src/notifier/email.js',
+  'src/scraper/BaseScraper.js',
+  'src/scraper/TripScraper.js',
+  'src/scraper/index.js',
+  'src/server/index.js',
+  'src/utils/logger.js',
+  'src/utils/time.js',
   'package.json',
   '.gitignore'
 ];
 
 async function runCommand(command, args, options = {}) {
   const result = await execFileAsync(command, args, {
-    cwd: __dirname,
+    cwd: projectRoot,
     maxBuffer: 1024 * 1024 * 10,
     ...options
   });

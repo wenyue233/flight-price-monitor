@@ -1,20 +1,19 @@
 /**
- * GitHub Pages 发布脚本。
- *
- * 只提交 GitHub Pages 展示所需文件。
- * git push 失败时由调用方记录错误，不影响本地保存。
+ * GitHub Pages 用ファイルを commit / push する公開処理モジュール。
  */
 
 const { execFile } = require('child_process');
 const fs = require('fs/promises');
+const path = require('path');
 const { promisify } = require('util');
-const { consoleInfo } = require('./utils/logger');
+const { consoleInfo } = require('../utils/logger');
 
 const execFileAsync = promisify(execFile);
+const projectRoot = path.resolve(__dirname, '..', '..');
 
 async function runGit(args) {
   const result = await execFileAsync('git', args, {
-    cwd: __dirname,
+    cwd: projectRoot,
     maxBuffer: 1024 * 1024
   });
 
@@ -23,7 +22,7 @@ async function runGit(args) {
 
 async function hasGitRepository() {
   try {
-    await fs.access(`${__dirname}/.git`);
+    await fs.access(path.join(projectRoot, '.git'));
     return true;
   } catch {
     return false;

@@ -1,12 +1,9 @@
 /**
- * 邮件通知模块。
- *
- * 默认 dry-run：只输出邮件标题和正文，不会真的发送。
- * 真实发送需要 MAIL_DRY_RUN=false，并配置 SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/MAIL_TO。
+ * 価格変化メールの内容を作成し、設定に応じて送信する通知モジュール。
  */
 
-const config = require('./config');
-const { consoleInfo } = require('./utils/logger');
+const config = require('../../config');
+const { consoleInfo } = require('../utils/logger');
 
 function formatPrice(price, currency) {
   return `${Number(price).toLocaleString('ja-JP')} ${currency}`;

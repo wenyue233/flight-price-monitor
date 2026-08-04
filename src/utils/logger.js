@@ -1,11 +1,10 @@
 /**
- * 简单文件日志工具。
- * 抓取机票时，失败原因通常需要回看当时页面、截图和错误栈。
+ * コンソール出力と診断用ファイル保存を扱うログユーティリティ。
  */
 
 const fs = require('fs/promises');
 const path = require('path');
-const config = require('../config');
+const config = require('../../config');
 const { timestampForFile } = require('./time');
 
 async function ensureLogDirs() {

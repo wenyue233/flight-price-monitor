@@ -1,8 +1,5 @@
 /**
- * Scraper 抽象基类。
- *
- * 新增 Spring 官网、携程、Google Flights、Skyscanner 时，
- * 建议都继承这个类，并实现 searchLowestPrice(route)。
+ * 航空券価格 scraper が実装する共通インターフェースを定義する基底クラス。
  */
 
 class BaseScraper {

@@ -1,7 +1,5 @@
 /**
- * Scraper 注册中心。
- *
- * 以后新增网站时，在这里导入并加入数组即可。
+ * 有効な航空券価格 scraper を生成する登録モジュール。
  */
 
 const TripScraper = require('./TripScraper');

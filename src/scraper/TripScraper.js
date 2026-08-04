@@ -1,17 +1,13 @@
 /**
- * Trip.com Playwright 抓取器。
+ * Trip.com を Playwright で操作し、設定された往復便の価格を取得する scraper。
  *
- * 注意：
- * 1. 这里不会调用 Trip.com 私有 API。
- * 2. 程序会真实打开网页，并从渲染后的页面读取价格。
- * 3. Trip.com 页面结构可能变化，所以价格抽取使用多种策略；
- *    如果全部失败，会保存截图、HTML 和详细日志，而不是直接静默崩溃。
+ * Trip.com の私有 API は使わず、実際に描画されたページから必要な情報を読み取る。
  */
 
 const path = require('path');
 const { chromium } = require('playwright');
 const BaseScraper = require('./BaseScraper');
-const config = require('../config');
+const config = require('../../config');
 const { timestampForFile } = require('../utils/time');
 const { ensureLogDirs, writeDebugHtml, writeJsonLog } = require('../utils/logger');
 
@@ -239,7 +235,7 @@ class TripScraper extends BaseScraper {
   }
 
   async waitForLikelyResults(page) {
-    // 给前端应用一点时间完成渲染。即使网络空闲不可靠，也不要马上抽取。
+    // フロントエンド側の描画が完了するまで少し待つ。networkidle だけに依存しない。
     await page.waitForLoadState('networkidle', { timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(5000);
 
@@ -358,7 +354,7 @@ class TripScraper extends BaseScraper {
       function addMatch(results, rawText, amount, detectedCurrency) {
         const price = normalizeAmount(amount);
 
-        // 太小的数字大概率是评分、日期、人数等，不作为机票候选价格。
+        // 小さすぎる数値は評価、日付、人数などの可能性が高いため、航空券価格候補から除外する。
         if (!price || price < minimumReasonablePrice(detectedCurrency)) {
           return;
         }
@@ -1031,7 +1027,7 @@ class TripScraper extends BaseScraper {
           return /春秋航空|Spring Airlines|18:00|19:00|13:50|13:55|17:00|JPY|¥|USD|US\$|\$/i.test(card.text);
         });
 
-      // 如果 Trip 把往返组合渲染在一个大容器里，这里会命中最小的完整容器。
+      // Trip が往復の組み合わせを大きなコンテナに描画する場合、最小の完全なコンテナを候補にする。
       const candidates = cards.concat([{ text: bodyText, area: Number.MAX_SAFE_INTEGER }])
         .map((card) => {
           const price = extractPrice(card.text);
@@ -1561,3 +1557,6 @@ class TripScraper extends BaseScraper {
 }
 
 module.exports = TripScraper;
+
+
+

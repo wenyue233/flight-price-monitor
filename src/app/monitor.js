@@ -1,10 +1,10 @@
 /**
- * 单次价格监控任务。
+ * 1 回分の価格監視処理をまとめるモジュール。
  *
- * scheduler.js 负责“什么时候运行”，这里负责“运行一次做什么”。
+ * 取得、保存、dashboard 生成、通知、publish の流れをここで組み立てる。
  */
 
-const config = require('./config');
+const config = require('../../config');
 const {
   initializeDatabase,
   insertPriceRecord,
@@ -12,13 +12,13 @@ const {
   getLatestAnyRecord,
   getPreviousRecord,
   getPriceStats
-} = require('./database');
-const { createScrapers } = require('./scrapers');
-const { generateDashboard } = require('./dashboard');
-const { maybeSendPriceEmail } = require('./notifier');
-const { publishDashboard } = require('./publisher');
-const { todayString, timeString } = require('./utils/time');
-const { consoleInfo, consoleError, writeJsonLog } = require('./utils/logger');
+} = require('../database');
+const { createScrapers } = require('../scraper');
+const { generateDashboard } = require('../dashboard/generator');
+const { maybeSendPriceEmail } = require('../notifier/email');
+const { publishDashboard } = require('../git/publisher');
+const { todayString, timeString } = require('../utils/time');
+const { consoleInfo, consoleError, writeJsonLog } = require('../utils/logger');
 
 function formatPrice(price, currency) {
   if (price === null || price === undefined) {
