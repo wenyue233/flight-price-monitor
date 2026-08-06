@@ -38,3 +38,10 @@ jobs:
 
       - name: Update flight price
         run: pnpm run once
+
+      - name: Save updated data
+        run: |
+          git add flight-prices.sqlite
+          git add index.html
+          git commit -m "Update flight price data and dashboard" || echo "No changes to commit"
+          git push  
