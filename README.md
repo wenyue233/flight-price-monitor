@@ -1,297 +1,301 @@
 # Flight Price Monitor
 
-Trip.com で指定した往復航空券を定期的に確認し、価格履歴を SQLite に保存して、静的な dashboard を生成する個人用の航空券価格監視ツールです。
+Node.js と Playwright を使って航空券価格を定期的に取得し、SQLite に履歴を保存して、GitHub Pages 上に Dashboard として公開する航空券価格監視アプリです。
 
-現在は福岡 `FUK` から上海浦東 `PVG` への Spring Airlines 往復便を対象にしています。検索は手動実行、常駐監視、GitHub Pages 公開のいずれにも対応しています。
+このプロジェクトは、特定ルートの航空券価格を継続的に追跡し、価格変化を見える化することを目的に開発しました。ローカル PC での手動実行から始まり、現在は GitHub Actions による定期自動実行と、GitHub リポジトリへのデータ永続化に対応しています。
 
 ## プロジェクト概要
-            Trip.com
-               ↓
-        Playwright Scraper
-               ↓
-          SQLite Database
-               ↓
-      Dashboard Generator
-               ↓
-            GitHub Pages
-このプロジェクトは、航空券価格を毎日決まった時刻に確認し、価格の変化を見やすく残すことを目的にしています。
 
-主な機能は次のとおりです。
+このアプリは、Trip.com の航空券検索ページを Playwright で開き、設定された条件に合う航空券価格を取得します。取得した価格は SQLite に保存され、履歴データをもとに `dashboard.html` と `index.html` が生成されます。
 
-- Trip.com を Playwright で開き、実際に表示された検索結果から価格を取得する
-- 指定した航空会社、往路・復路時刻、直行便条件に合う往復便だけを保存する
-- SQLite に価格履歴を蓄積する
-- `dashboard.html` と `index.html` を生成する
-- GitHub Pages に dashboard を公開する
-- 価格変化があった場合にメール通知内容を作成する
-- dashboard の表示言語を日本語 / 簡体字中国語で切り替えられる
+生成された `index.html` は GitHub Pages で公開できるため、ブラウザから最新の価格状況と履歴を確認できます。
 
-## 技術スタック
+開発目的は次のとおりです。
 
-- Node.js `>=22.5.0`
-- CommonJS
-- Playwright
-- node:sqlite
-- node-cron
-- Express
-- Chart.js
-- pnpm / Corepack
-- GitHub Pages
+- 航空券価格の変化を手作業ではなく自動で記録する
+- ブラウザ操作、データ保存、定期実行、静的ページ公開までを一通り実装する
+- GitHub Actions を使い、ローカル PC に依存しない定期監視へ移行する
+- 研修成果物・ポートフォリオとして説明できる構成にする
 
-## ファイル構成
+## 主な機能
 
-```text
-config/
-  index.js                  アプリ全体の設定と環境変数の既定値
+- **航空券価格取得**  
+  Playwright で Trip.com を開き、設定されたルート・日付・航空会社・時刻条件に合う価格を取得します。
 
-src/
-  app/
-    index.js                実行入口。once / watch モードを切り替える
-    monitor.js              1 回分の検索、保存、dashboard 生成、通知、publish をまとめる
-    nextQueryTime.js         watch 起動後に表示する次回検索時刻を計算する
-    scheduler.js            node-cron による定期実行を管理する
-    update.js               検索、dashboard 更新、Git commit / push をまとめて実行する
+- **価格履歴保存**  
+  取得した価格、検索日時、航空会社、便情報、通貨、マッチ状態などを SQLite の `price_history` に保存します。
 
-  scraper/
-    BaseScraper.js          scraper の共通インターフェース
-    TripScraper.js          Trip.com を Playwright で操作する scraper
-    index.js                有効な scraper を登録する
+- **Dashboard 表示**  
+  SQLite の履歴データから `dashboard.html` と `index.html` を生成します。Dashboard では最新価格、履歴、グラフ、異常価格記録を確認できます。
 
-  database/
-    index.js                SQLite の初期化、マイグレーション、CRUD
+- **自動実行**  
+  GitHub Actions の `schedule` により、定期的に価格取得処理を実行します。`workflow_dispatch` による手動実行にも対応しています。
 
-  dashboard/
-    generator.js            SQLite の履歴から dashboard HTML を生成する
-    locales.js              dashboard の日本語 / 中国語 UI 文言
+- **データ永続化**  
+  GitHub Actions Runner は実行ごとに破棄されますが、更新後の `flight-prices.sqlite` を GitHub リポジトリへ commit / push することで、履歴データを保持します。
 
-  notifier/
-    email.js                価格変化メールの作成と送信
+- **GitHub Pages 公開**  
+  生成された `index.html` を GitHub Pages で公開し、Dashboard として閲覧できます。
 
-  git/
-    publisher.js            GitHub Pages 用ファイルの commit / push
+## システム構成
 
-  server/
-    index.js                Render などで dashboard を配信する Express サーバー
+### ローカル実行時の構成
 
-  utils/
-    logger.js               ログ、スクリーンショット、debug HTML の保存
-    time.js                 日付と時刻の整形
+ローカルでは、開発者の PC 上で Node.js アプリを実行します。
 
-dashboard.html              生成済み dashboard
-index.html                  GitHub Pages のトップページ用 dashboard
-flight-prices.sqlite        価格履歴データベース
-package.json                npm scripts と依存関係
-render.yaml                 Render cron 用設定
+```mermaid
+flowchart LR
+  A["pnpm run once / watch"] --> B["Node.js App"]
+  B --> C["Playwright"]
+  C --> D["Trip.com"]
+  B --> E["SQLite<br>flight-prices.sqlite"]
+  E --> F["Dashboard Generator"]
+  F --> G["dashboard.html / index.html"]
 ```
 
-## システム流程
+`pnpm run once` は 1 回だけ検索します。`pnpm run watch` は起動直後に 1 回検索し、その後は `config/index.js` の cron 設定に従って定期実行します。
 
-1. `pnpm run once` または scheduler から `runMonitorOnce()` が呼ばれる。
-2. `TripScraper` が Trip.com を開き、指定ルートの検索結果を読み込む。
-3. 対象航空会社、時刻、直行便条件に合う往復便を探す。
-4. 条件に合う便が見つかった場合、最終支払い価格を取得する。
-5. 価格を SQLite の `price_history` に保存する。
-6. 前回価格や過去統計をもとに summary と通知内容を作る。
-7. `dashboard.html` と `index.html` を再生成する。
-8. GitHub remote が設定されている場合、Pages 用ファイルを commit / push する。
+### GitHub Actions 移行後の構成
 
-## セットアップ
+現在の自動実行は `.github/workflows/flight-monitor.yml` で管理されています。
 
-Node.js `>=22.5.0` が必要です。SQLite は Node.js 組み込みの `node:sqlite` を使っています。
+```mermaid
+flowchart LR
+  A["GitHub Actions<br>schedule / workflow_dispatch"] --> B["Checkout Repository"]
+  B --> C["Install Node / pnpm / Playwright"]
+  C --> D["pnpm run once"]
+  D --> E["Trip.com から価格取得"]
+  D --> F["SQLite 更新"]
+  D --> G["Dashboard HTML 生成"]
+  F --> H["git add flight-prices.sqlite"]
+  G --> I["git add index.html dashboard.html"]
+  H --> J["commit / push"]
+  I --> J
+  J --> K["GitHub Pages Dashboard"]
+```
+
+GitHub Actions 上でも、基本的な処理はローカル実行と同じです。違いは、実行後に SQLite と HTML をリポジトリへ push し、次回実行時に前回までの履歴を引き継ぐ点です。
+
+## 使用技術
+
+- **Node.js**  
+  アプリ本体の実行環境です。`package.json` では Node.js `>=22.5.0` を前提にしています。
+
+- **Playwright**  
+  Trip.com のページを実際のブラウザとして開き、JavaScript で描画された検索結果から価格情報を取得します。
+
+- **SQLite / node:sqlite**  
+  価格履歴を保存するために使用しています。外部 DB サーバーを用意せず、`flight-prices.sqlite` という 1 ファイルで管理します。
+
+- **GitHub Actions**  
+  定期実行、手動実行、依存関係インストール、価格取得、データ commit / push を自動化します。
+
+- **GitHub Pages**  
+  生成された `index.html` を Dashboard として公開します。
+
+- **HTML / CSS / JavaScript**  
+  Dashboard の表示、グラフ描画、言語切り替え UI に使用しています。
+
+- **Chart.js**  
+  Dashboard の価格推移グラフに使用しています。
+
+## ディレクトリ構成
+
+現在の主な構成は次のとおりです。
+
+```text
+.
+├─ .github/
+│  └─ workflows/
+│     └─ flight-monitor.yml        GitHub Actions の定期実行 workflow
+├─ config/
+│  └─ index.js                     ルート、対象便、通知、保存先などの設定
+├─ src/
+│  ├─ app/
+│  │  ├─ index.js                  アプリのエントリーポイント
+│  │  ├─ monitor.js                1 回分の監視処理を統括
+│  │  ├─ nextQueryTime.js          次回実行予定時刻の表示用ロジック
+│  │  ├─ scheduler.js              ローカル watch 用の定期実行制御
+│  │  └─ update.js                 ローカルでの更新・commit・push 用スクリプト
+│  ├─ dashboard/
+│  │  ├─ generator.js              Dashboard HTML 生成
+│  │  └─ locales.js                Dashboard の日本語 / 中国語 UI 文言
+│  ├─ database/
+│  │  └─ index.js                  SQLite 初期化、保存、取得処理
+│  ├─ git/
+│  │  └─ publisher.js              GitHub Pages 用ファイルの publish 処理
+│  ├─ notifier/
+│  │  └─ email.js                  メール通知処理
+│  ├─ scraper/
+│  │  ├─ BaseScraper.js            scraper の基底クラス
+│  │  ├─ TripScraper.js            Trip.com 価格取得処理
+│  │  └─ index.js                  scraper 登録
+│  ├─ server/
+│  │  └─ index.js                  Dashboard 配信用 Express サーバー
+│  └─ utils/
+│     ├─ logger.js                 ログ・診断ファイル出力
+│     └─ time.js                   日付・時刻ユーティリティ
+├─ dashboard.html                  生成済み Dashboard
+├─ index.html                      GitHub Pages 公開用 Dashboard
+├─ flight-prices.sqlite            価格履歴 SQLite データベース
+├─ package.json                    npm scripts と依存関係
+├─ pnpm-lock.yaml                  pnpm lockfile
+└─ README.md
+```
+
+## ローカル環境での実行方法
+
+### 1. 依存関係をインストール
+
+pnpm を使う場合:
 
 ```bash
 corepack enable
 corepack pnpm install
-corepack pnpm exec playwright install chromium
 ```
 
-Windows では次のように `corepack.cmd` を使えます。
+Windows の場合:
 
 ```powershell
 corepack.cmd pnpm install
+```
+
+Playwright の Chromium をインストールします。
+
+```bash
+corepack pnpm exec playwright install chromium
+```
+
+Windows の場合:
+
+```powershell
 corepack.cmd pnpm exec playwright install chromium
 ```
 
-## 設定方法
-
-基本設定は [config/index.js](config/index.js) にあります。
-
-主な設定項目は次のとおりです。
-
-- `route.departureAirport`: 出発空港。既定値は `FUK`
-- `route.arrivalAirport`: 到着空港。既定値は `PVG`
-- `route.departureDate`: 出発日。形式は `YYYY-MM-DD`
-- `route.returnDate`: 復路日。形式は `YYYY-MM-DD`
-- `route.currency`: 取得したい通貨。例: `JPY`
-- `targetFlight`: 航空会社、往路・復路時刻、直行便条件、時刻許容幅
-- `manualPrice`: 手動確認価格。dashboard 上で自動取得価格と比較する
-- `scheduler.cronExpressions`: 自動検索の実行時刻
-
-環境変数でも上書きできます。
-
-```bash
-FLIGHT_FROM=FUK FLIGHT_TO=PVG FLIGHT_DEPARTURE_DATE=2026-08-08 FLIGHT_RETURN_DATE=2026-08-16 pnpm run once
-```
-
-## 実行方法
-
-1 回だけ検索します。
+### 2. 1 回だけ価格取得する
 
 ```bash
 pnpm run once
 ```
 
-Windows では次のように実行できます。
+Windows の場合:
 
 ```powershell
 corepack.cmd pnpm run once
 ```
 
-watch モードでは、起動直後に 1 回検索したあと、毎日 `09:00`、`13:00`、`17:00`、`21:00` JST に自動検索します。
+### 3. ローカルで定期実行する
 
 ```bash
 pnpm run watch
 ```
 
-Windows:
+watch モードでは、起動直後に 1 回検索したあと、`config/index.js` の `scheduler.cronExpressions` に従って定期実行します。
 
-```powershell
-corepack.cmd pnpm run watch
-```
-
-dashboard をローカルサーバーで配信します。
+### 4. Dashboard をローカル配信する
 
 ```bash
 pnpm run serve
 ```
 
-一括更新、commit、push を行います。
+起動後、ブラウザで次にアクセスします。
+
+```text
+http://localhost:3000/
+```
+
+### 5. ローカルから更新・push する
 
 ```bash
 pnpm run update
 ```
 
-Windows:
+Windows の場合:
 
 ```powershell
 corepack.cmd pnpm run update
 ```
 
-## Dashboard
+## GitHub Actions について
 
-検索後に次の 2 つの HTML が生成されます。
+GitHub Actions の設定は `.github/workflows/flight-monitor.yml` にあります。
 
-- `dashboard.html`
-- `index.html`
+現在の workflow は次の 2 種類の起動方法に対応しています。
 
-`index.html` は GitHub Pages のトップページとして使います。どちらも同じ内容で、サーバーなしでもブラウザで直接開けます。
+- `schedule`
+- `workflow_dispatch`
 
-dashboard には次の情報を表示します。
+### 定期実行
 
-- 最新価格
-- 手動確認価格との差分
-- 前回価格との差分
-- 過去最低価格と過去最高価格
-- 直近の価格推移グラフ
-- 直近 10 件の履歴
-- 異常価格として扱った記録
-- 日本語 / 簡体字中国語の切り替え
+workflow では次の cron が設定されています。
 
-## データ
+```yaml
+schedule:
+  - cron: "0 */4 * * *"
+```
 
-SQLite データベースは既定でプロジェクト直下に保存されます。
+これは UTC 基準で 4 時間ごとに実行される設定です。GitHub Actions の cron は UTC で解釈されるため、日本時間とは 9 時間ずれます。
+
+### 手動実行
+
+`workflow_dispatch` が設定されているため、GitHub の Actions 画面から手動で workflow を実行できます。発表や動作確認のときに、スケジュールを待たずに実行できる点が便利です。
+
+### 実行内容
+
+workflow の主な処理は次のとおりです。
+
+1. リポジトリを checkout する
+2. Node.js 24 をセットアップする
+3. pnpm をセットアップする
+4. 依存関係をインストールする
+5. Playwright Chromium をインストールする
+6. Git のユーザー情報を設定する
+7. `pnpm run once` を実行する
+8. 更新された SQLite と HTML を commit / push する
+
+workflow には `permissions: contents: write` が設定されており、実行結果をリポジトリへ push できるようになっています。
+
+## データ永続化について
+
+GitHub Actions の Runner は、実行が終わると環境ごと破棄されます。そのため、Runner 内だけに SQLite を保存しても、次回実行時には履歴が残りません。
+
+このプロジェクトでは、価格取得後に次のファイルを GitHub リポジトリへ commit / push します。
 
 ```text
 flight-prices.sqlite
+index.html
+dashboard.html
 ```
 
-主なテーブルは `price_history` です。
+これにより、次回の GitHub Actions 実行時には、checkout したリポジトリ内に前回までの `flight-prices.sqlite` が存在します。結果として、Runner が毎回新しくなっても価格履歴を引き継げます。
 
-保存される主な項目は次のとおりです。
+つまり、SQLite ファイル自体をリポジトリで管理することで、外部データベースを使わずに履歴データを永続化しています。
 
-- 検索日時
-- 価格
-- 通貨
-- サイト名
-- 出発空港 / 到着空港
-- 出発日 / 復路日
-- 往路・復路の便名
-- 航空会社
-- 往路・復路の出発 / 到着時刻
-- 直行便かどうか
-- マッチ状態
-- 元価格テキスト
+## GitHub Pages Dashboard について
 
-旧バージョンの `price_records` が存在する場合は、初回起動時に `price_history` へコピーします。既存データは削除しません。
-
-## GitHub Pages 公開
-
-手動で publish する場合は次を実行します。
-
-```bash
-pnpm run publish
-```
-
-publish は GitHub Pages 表示に必要なファイルだけを対象にします。
-
-- `dashboard.html`
-- `index.html`
-- `README.md`
-
-GitHub remote が設定されていない場合は、commit / push を行わずにスキップします。
-
-公開 URL は環境変数で変更できます。
-
-```bash
-DASHBOARD_URL=https://example.github.io/flight-price-monitor/
-```
-
-## メール通知
-
-既定では dry-run です。実際には送信せず、通知対象になった場合に件名と本文をコンソールへ出力します。
-
-通知条件は次のとおりです。
-
-- 前回価格より下がった
-- 前回価格より上がった
-- 目標価格を下回った
-
-実際にメール送信するには、SMTP 設定と `MAIL_DRY_RUN=false` が必要です。
-
-```bash
-SMTP_HOST=
-SMTP_PORT=
-SMTP_USER=
-SMTP_PASS=
-MAIL_TO=
-MAIL_DRY_RUN=false
-```
-
-必要に応じて `nodemailer` を追加します。
-
-```bash
-pnpm add nodemailer
-```
-
-## エラー調査
-
-Trip.com のページ構造変更、読み込み失敗、価格抽出失敗が起きた場合、ログと調査用ファイルを保存します。
+Dashboard は `src/dashboard/generator.js` によって生成されます。保存済みの SQLite データを読み込み、次の 2 つの HTML を出力します。
 
 ```text
-work/logs/
-work/screenshots/
-work/debug-html/
+dashboard.html
+index.html
 ```
 
-これにより、失敗時点の画面や HTML をあとから確認できます。
+GitHub Pages では通常 `index.html` がトップページとして表示されるため、`index.html` を生成・更新することで Dashboard を公開できます。
 
-## 改善計画
+更新フローは次のとおりです。
 
-- dashboard の表をフィルターやソートに対応させる
-- 価格推移グラフに期間切り替えを追加する
-- 複数ルートの監視に対応する
-- 複数サイトの scraper を追加する
-- メール以外の通知方法を追加する
-- 設定を JSON や UI から編集できるようにする
-- 監視結果の自動テストを増やす
-- Docker / Render 運用手順をさらに整理する
+```mermaid
+flowchart LR
+  A["SQLite<br>flight-prices.sqlite"] --> B["Dashboard Generator"]
+  B --> C["dashboard.html"]
+  B --> D["index.html"]
+  D --> E["GitHub Pages"]
+```
+
+Dashboard では、最新価格、直近履歴、価格推移グラフ、異常価格記録を確認できます。また、UI は日本語と簡体字中国語の切り替えに対応しています。
+
+## 補足
+
+このプロジェクトでは、Trip.com のページ構造変更や読み込み失敗に備えて、エラー発生時に `work/logs/`、`work/screenshots/`、`work/debug-html/` へ診断情報を保存する仕組みも用意しています。
+
+GitHub Pages に公開する対象は Dashboard 用 HTML です。ログやスクリーンショットなどの調査用ファイルは、通常の公開対象には含めません。
